@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>나의 지도 보기</title>
+  <style>
+    /* 지도의 크기를 설정합니다 */
+    #map {
+      height: 70vh; /* 화면 높이의 70% */
+      width: 100%;
+    }
+    #address {
+      margin-top: 20px;
+      font-size: 1.2em;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>📍 지도에서 위치 확인</h1>
+
+  <div id="map"></div>
+
+  <div id="address">주소 정보를 불러오는 중...</div>
+
+  <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAsBiqFxUsjLjxFC9waxyzP2xjK-4c0YS8&callback=initMap&language=ko&region=KR">
+  </script>
+
+  <script src="/js/map.js"></script>
+</body>
+</html>

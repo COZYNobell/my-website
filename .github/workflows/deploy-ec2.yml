@@ -59,6 +59,17 @@ jobs:
             echo "현재 브랜치 정보:"
             git branch
 
+            # ----------------------------------------------------------------------
+            # ✨ NEW: .env 파일 자동 생성 (GitHub Secrets 사용) - 이 부분이 추가되었습니다!
+            # ----------------------------------------------------------------------
+            echo "Creating .env file on EC2 server..."
+            # 기존 .env 파일이 있다면 덮어쓰고, 없다면 새로 생성합니다.
+            # printf는 변수 내 특수문자 처리에 용이하며, 각 라인 끝에 개행문자(\n)를 넣어줍니다.
+            printf "OPENWEATHERMAP_API_KEY=${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }}\n" > "$APP_DIR/.env"
+            printf "Maps_API_KEY=${{ secrets.Maps_API_KEY_SECRET }}\n" >> "$APP_DIR/.env"
+            echo ".env file created successfully in $APP_DIR/.env"
+            # ----------------------------------------------------------------------
+
             echo "운영 환경용 의존성 패키지 설치 (npm ci --production)"
             npm ci --production # server.js 실행에 필요한 패키지만 설치
 

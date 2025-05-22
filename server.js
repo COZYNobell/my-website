@@ -38,23 +38,28 @@ app.use(session({
 // 6.1. 메인 홈페이지 (루트 경로: /)
 app.get('/', (req, res) => {
   // 현재 로그인된 사용자 정보 확인 (세션에서)
-  const loggedInUser = req.session.user ? req.session.user.email : '방문자';
+  const loggedInUserEmail = req.session.user ? req.session.user.email : '방문자';
 
   res.send(`
     <h1>나의 멋진 웹사이트! 🌦️ 🗺️ </h1>
-    <p>안녕하세요, ${loggedInUser}님!</p> <p><a href="/dashboard.html">✨ 통합 대시보드 보기 ✨</a></p>
+    <p>안녕하세요, ${loggedInUserEmail}님!</p> 
+    <p><a href="/dashboard.html">✨ 통합 대시보드 보기 ✨</a></p>
     <hr>
     <p><strong>API 키 상태 (Node.js 서버가 인식하는 값):</strong></p>
     <p>OpenWeather API 키: ${OPENWEATHERMAP_API_KEY ? '✔️ 로드됨' : '❌ 로드 안됨 (.env 확인!)'}</p>
     <p>Google Maps API 키 (서버): ${Maps_API_KEY ? '✔️ 로드됨' : '❌ 로드 안됨 (.env 확인!)'}</p>
     <hr>
-    <p><a href="/signup.html">회원가입</a> | <a href="/login.html">로그인</a> | <a href="/logout">로그아웃 (구현 예정)</a></p>
+    <p>
+      ${req.session.user 
+        ? `<a href="/logout">로그아웃</a> | <span>${req.session.user.email}님 환영합니다!</span>`
+        : '<a href="/signup.html">회원가입</a> | <a href="/login.html">로그인</a>'
+      }
+    </p>
   `);
 });
 
 // 6.2. 이전 스타일 서울 날씨 페이지 (/weather) - 필요시 유지 또는 제거
 app.get('/weather', async (req, res) => {
-  // ... (이전과 동일한 서울 날씨 코드) ...
   if (!OPENWEATHERMAP_API_KEY) {
     console.error('🔴 OpenWeatherMap API 키가 .env 에서 로드되지 않았습니다!');
     return res.status(500).send('서버에 OpenWeatherMap API 키가 설정되지 않았어요. 😥 관리자에게 문의하세요.');
@@ -81,7 +86,6 @@ app.get('/weather', async (req, res) => {
 
 // 6.3. API: 좌표 기반 현재 날씨 정보 (/api/weather-by-coords)
 app.get('/api/weather-by-coords', async (req, res) => {
-  // ... (이전과 동일한 좌표 기반 현재 날씨 API 코드) ...
   const { lat, lon } = req.query;
   if (!lat || !lon) return res.status(400).json({ message: '위도(lat)와 경도(lon) 파라미터가 필요합니다.' });
   if (!OPENWEATHERMAP_API_KEY) return res.status(500).json({ message: '서버에 OpenWeatherMap API 키가 설정되지 않았습니다.' });
@@ -105,7 +109,6 @@ app.get('/api/weather-by-coords', async (req, res) => {
 
 // 6.4. API: 좌표 기반 날씨 예보 정보 (/api/weather-forecast)
 app.get('/api/weather-forecast', async (req, res) => {
-  // ... (이전과 동일한 좌표 기반 날씨 예보 API 코드) ...
   const { lat, lon } = req.query;
   if (!lat || !lon) return res.status(400).json({ message: '위도(lat)와 경도(lon) 파라미터가 필요합니다.' });
   if (!OPENWEATHERMAP_API_KEY) return res.status(500).json({ message: '서버에 OpenWeatherMap API 키가 설정되지 않았습니다.' });
@@ -142,7 +145,7 @@ app.get('/api/weather-forecast', async (req, res) => {
           temp_min: Math.min(...dayData.temps).toFixed(1),
           temp_max: Math.max(...dayData.temps).toFixed(1),
           description: dayData.weather_descriptions[representativeIndex] || dayData.weather_descriptions[0],
-          icon: (dayData.icons[representativeIndex] || dayDatsa.icons[0]).replace('n', 'd')
+          icon: (dayData.icons[representativeIndex] || dayData.icons[0]).replace('n', 'd')
         });
         datesProcessed.add(itemDateStr);
         addedDays++;
@@ -156,7 +159,7 @@ app.get('/api/weather-forecast', async (req, res) => {
   }
 });
 
-// ✨✨✨ 사용자 회원가입 처리 라우트 (/signup) - POST 방식 ✨✨✨
+// 6.5. 사용자 회원가입 처리 라우트 (/signup) - POST 방식
 app.post('/signup', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -173,59 +176,65 @@ app.post('/signup', async (req, res) => {
     users.push(newUser);
     console.log('새로운 사용자 가입됨:', { id: newUser.id, email: newUser.email });
     console.log('현재 가입된 사용자 목록 (개발용):', users.map(u => ({id: u.id, email: u.email})));
-    res.redirect('/login.html?signup=success'); // 회원가입 성공 시 로그인 페이지로 이동
+    res.redirect('/login.html?signup=success');
   } catch (error) {
     console.error("회원가입 처리 중 오류 발생:", error);
     res.status(500).send('회원가입 중 오류가 발생했습니다. <a href="/signup.html">다시 시도</a>');
   }
 });
 
-// ✨✨✨ NEW: 사용자 로그인 처리 라우트 (/login) - POST 방식 - 이 부분이 추가/수정되었습니다! ✨✨✨
+// 6.6. 사용자 로그인 처리 라우트 (/login) - POST 방식
 app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    // 1. 간단한 유효성 검사
     if (!email || !password) {
       return res.status(400).send('이메일과 비밀번호를 모두 입력해주세요. <a href="/login.html">다시 시도</a>');
     }
-
-    // 2. 사용자 찾기 (users 배열에서)
     const user = users.find(u => u.email === email);
     if (!user) {
-      // 사용자를 찾을 수 없거나 비밀번호가 일치하지 않는 경우, 동일한 메시지를 보내는 것이 보안상 더 좋을 수 있습니다.
       return res.status(401).send('가입되지 않은 이메일이거나 비밀번호가 일치하지 않습니다. <a href="/login.html">다시 시도</a>');
     }
-
-    // 3. 비밀번호 비교 (bcrypt.compare 사용)
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).send('가입되지 않은 이메일이거나 비밀번호가 일치하지 않습니다. <a href="/login.html">다시 시도</a>');
     }
-
-    // 4. 로그인 성공: 세션에 사용자 정보 저장
     req.session.user = {
       id: user.id,
       email: user.email
-      // 필요한 다른 사용자 정보를 여기에 추가할 수 있습니다.
     };
-
     console.log('사용자 로그인 성공:', req.session.user);
-    
-    // 5. 로그인 성공 후 대시보드 페이지로 리다이렉트
     res.redirect('/dashboard.html');
-
   } catch (error) {
     console.error("로그인 처리 중 오류 발생:", error);
     res.status(500).send('로그인 중 오류가 발생했습니다. <a href="/login.html">다시 시도</a>');
   }
 });
-// ✨✨✨ NEW /login 라우트 끝 ✨✨✨
+
+// ✨✨✨ NEW: 사용자 로그아웃 처리 라우트 (/logout) - GET 방식 - 이 부분이 추가되었습니다! ✨✨✨
+app.get('/logout', (req, res) => {
+  if (req.session.user) { // 로그인된 사용자가 있을 경우
+    const userEmail = req.session.user.email; // 로그를 위해 이메일 임시 저장
+    req.session.destroy(err => { // 세션 파기
+      if (err) {
+        console.error('세션 파기 중 오류 발생:', err);
+        return res.status(500).send('로그아웃 중 오류가 발생했습니다. <a href="/">홈으로</a>');
+      }
+      // 세션 쿠키를 명시적으로 삭제하고 싶다면 (선택 사항)
+      // res.clearCookie('connect.sid'); // 'connect.sid'는 express-session의 기본 세션 쿠키 이름
+      
+      console.log(`사용자 (${userEmail}) 로그아웃 성공 및 세션 파기 완료`);
+      res.redirect('/?logout=success'); // 로그아웃 후 홈페이지로 리다이렉트
+    });
+  } else { // 로그인된 사용자가 없을 경우
+    res.redirect('/'); // 그냥 홈페이지로 리다이렉트
+  }
+});
+// ✨✨✨ NEW /logout 라우트 끝 ✨✨✨
+
 
 // 7. 서버 실행
 app.listen(port, () => {
   console.log(`와! ${port}번 포트에서 웹사이트가 열렸어요! 브라우저에서 http://localhost:${port} 로 접속해보세요!`);
-  // ... (기존 API 키 로드 확인 콘솔 로그들) ...
   if (OPENWEATHERMAP_API_KEY) console.log('🟢 OpenWeatherMap API 키 로드됨.');
   else console.error('🔴 중요! OpenWeatherMap API 키 로드 실패!');
   if (Maps_API_KEY) console.log('🔵 Google Maps API 키 (서버용) 로드됨.');

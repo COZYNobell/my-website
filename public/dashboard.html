@@ -13,6 +13,15 @@
         #address-display { text-align: center; padding: 10px; font-weight: bold; }
         .info-container { display: flex; flex-wrap: wrap; /* 모바일 화면에서 줄바꿈을 위해 */ padding: 10px; }
         .info-container section { flex: 1; min-width: 280px; /* 최소 너비 지정 */ margin: 10px; padding: 15px; border: 1px solid #ccc; border-radius: 5px;}
+        
+        /* ✨ NEW: 즐겨찾기 섹션 스타일 (간단하게) ✨ */
+        #favorites-section { padding: 20px; margin-top: 10px; border-top: 2px solid #eee; }
+        #favorites-list .favorite-item { border-bottom: 1px dotted #ddd; padding: 8px 0; display: flex; justify-content: space-between; align-items: center; }
+        #favorites-list .favorite-item:last-child { border-bottom: none; }
+        #favorites-list .favorite-item span { cursor: pointer; }
+        #favorites-list .favorite-item span:hover { text-decoration: underline; color: blue; }
+        #favorites-list .favorite-item button { margin-left: 10px; padding: 3px 8px; font-size: 0.8em; cursor: pointer; background-color: #ffdddd; border: 1px solid #ffaaaa; border-radius: 3px;}
+        #favorites-list .favorite-item button:hover { background-color: #ffcccc; }
         /* 간단한 CSS, 나중에 더 예쁘게 꾸밀 수 있습니다. */
     </style>
 </head>
@@ -44,7 +53,14 @@
                 <p>예보 정보를 보려면 지도에서 위치를 선택하거나 로그인하세요.</p>
             </section>
         </div>
-    </main>
+
+        <section id="favorites-section">
+            <h2>⭐ 나의 즐겨찾기 목록</h2>
+            <div id="favorites-list">
+                <p>로그인하시면 즐겨찾기 목록을 볼 수 있습니다.</p>
+            </div>
+        </section>
+        </main>
 
     <script src="/js/dashboard.js"></script>
     <script async defer

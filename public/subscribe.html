@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>날씨 정보 구독</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 80vh; background-color: #f4f4f4; }
+        .container { background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); width: 350px; text-align: center; }
+        h1 { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 5px; text-align: left; }
+        input[type="email"] { width: 95%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; }
+        button { width: 100%; padding: 10px; background-color: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #138496; }
+        .message { margin-top:15px; }
+        .message a { color: #007bff; text-decoration: none; }
+        #response-message { margin-top: 15px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>날씨 정보 이메일 구독 🌦️</h1>
+        <p>이메일을 등록하시면 매일 날씨 정보를 보내드립니다.</p>
+        <form id="subscribe-form">
+            <div>
+                <label for="email">이메일 주소:</label>
+                <input type="email" id="email" name="email" placeholder="이메일 입력" required>
+            </div>
+            <button type="submit">구독하기</button>
+        </form>
+        <div id="response-message"></div> <div class="message">
+            <p><a href="/">홈으로 돌아가기</a></p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById("subscribe-form").addEventListener("submit", async (e) => {
+            e.preventDefault(); // 기본 폼 제출 방지
+
+            const emailInput = document.getElementById("email");
+            const email = emailInput.value;
+            const responseMessageDiv = document.getElementById("response-message");
+            responseMessageDiv.textContent = ""; // 이전 메시지 초기화
+
+            // 중요: <API_GATEWAY_URL> 부분은 실제 생성할 API Gateway 엔드포인트 URL로 변경해야 합니다.
+            const apiUrl = "https://https://7jn93wrich.execute-api.ap-southeast-2.amazonaws.com/sns-subscribe"; // 예시 URL (실제로는 /prod 스테이지나 사용하시는 스테이지명)
+
+            if (!email) {
+                responseMessageDiv.textContent = "이메일을 입력해주세요.";
+                responseMessageDiv.style.color = "red";
+                return;
+            }
+
+            try {
+                responseMessageDiv.textContent = "구독 요청 중...";
+                responseMessageDiv.style.color = "blue";
+
+                const res = await fetch(apiUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email: email }), // 서버 Lambda가 받을 데이터 형식에 맞춤
+                });
+
+                const result = await res.json(); // Lambda 응답이 JSON 형태라고 가정
+
+                if (res.ok) {
+                    responseMessageDiv.textContent = result.message || "구독 요청이 성공적으로 처리되었습니다! 확인 이메일을 확인해주세요.";
+                    responseMessageDiv.style.color = "green";
+                    emailInput.value = ""; // 입력 필드 초기화
+                } else {
+                    responseMessageDiv.textContent = "구독 실패: " + (result.message || "서버에서 오류가 발생했습니다.");
+                    responseMessageDiv.style.color = "red";
+                }
+            } catch (err) {
+                console.error("구독 요청 중 JavaScript 오류:", err);
+                responseMessageDiv.textContent = "오류 발생: " + err.message + ". 잠시 후 다시 시도해주세요.";
+                responseMessageDiv.style.color = "red";
+            }
+        });
+    </script>
+</body>
+</html>

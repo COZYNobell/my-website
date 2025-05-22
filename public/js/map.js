@@ -16,8 +16,25 @@ function initMap() {
     title: '여기가 초기 위치입니다!' // 마커에 마우스를 올리면 나오는 텍스트 (선택 사항)
   });
 
-  // 4. (다음 단계에서 추가할 내용) 주소 정보를 표시할 로직
-  // 우선은 간단하게 초기 위치의 위도/경도를 표시해봅시다.
+  // 4. Geocoding API를 사용하여 주소 정보 가져오기 ✨ 추가된 부분 시작
+  const geocoder = new google.maps.Geocoder(); // Geocoder 객체 생성
   const addressDiv = document.getElementById('address');
-  addressDiv.textContent = `현재 표시된 위치 (위도/경도): ${initialLocation.lat.toFixed(4)}, ${initialLocation.lng.toFixed(4)}`;
+
+  geocoder.geocode({ 'location': initialLocation }, function(results, status) {
+    if (status === 'OK') {
+      if (results[0]) {
+        // results[0].formatted_address 가 보통 전체 주소를 잘 보여줍니다.
+        // map.html에서 API 로드 시 language=ko&region=KR 파라미터를 사용했기 때문에
+        // 한국어 주소로 잘 나올 가능성이 높습니다.
+        addressDiv.textContent = `주소: ${results[0].formatted_address}`;
+      } else {
+        addressDiv.textContent = '주소를 찾을 수 없습니다.';
+        console.warn('No results found for geocoding');
+      }
+    } else {
+      addressDiv.textContent = 'Geocoder에 실패했습니다: ' + status;
+      console.error('Geocoder failed due to: ' + status);
+    }
+  });
+  // ✨ 추가된 부분 끝
 }

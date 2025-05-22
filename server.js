@@ -37,9 +37,7 @@ app.use(session({
 
 // 6.1. 메인 홈페이지 (루트 경로: /)
 app.get('/', (req, res) => {
-  // 현재 로그인된 사용자 정보 확인 (세션에서)
   const loggedInUserEmail = req.session.user ? req.session.user.email : '방문자';
-
   res.send(`
     <h1>나의 멋진 웹사이트! 🌦️ 🗺️ </h1>
     <p>안녕하세요, ${loggedInUserEmail}님!</p> 
@@ -61,8 +59,7 @@ app.get('/', (req, res) => {
 // 6.2. 이전 스타일 서울 날씨 페이지 (/weather) - 필요시 유지 또는 제거
 app.get('/weather', async (req, res) => {
   if (!OPENWEATHERMAP_API_KEY) {
-    console.error('🔴 OpenWeatherMap API 키가 .env 에서 로드되지 않았습니다!');
-    return res.status(500).send('서버에 OpenWeatherMap API 키가 설정되지 않았어요. 😥 관리자에게 문의하세요.');
+    return res.status(500).send('서버에 OpenWeatherMap API 키가 설정되지 않았어요.');
   }
   const city = 'Seoul';
   const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${OPENWEATHERMAP_API_KEY}&units=metric&lang=kr`;
@@ -80,7 +77,7 @@ app.get('/weather', async (req, res) => {
     `);
   } catch (error) {
     console.error('❌ 날씨 정보 가져오기 실패:', error.message);
-    res.status(500).send('날씨 정보를 가져오는 데 실패했어요. 😥 나중에 다시 시도해주세요.');
+    res.status(500).send('날씨 정보를 가져오는 데 실패했어요.');
   }
 });
 
@@ -210,26 +207,34 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// ✨✨✨ NEW: 사용자 로그아웃 처리 라우트 (/logout) - GET 방식 - 이 부분이 추가되었습니다! ✨✨✨
+// 6.7. 사용자 로그아웃 처리 라우트 (/logout) - GET 방식
 app.get('/logout', (req, res) => {
-  if (req.session.user) { // 로그인된 사용자가 있을 경우
-    const userEmail = req.session.user.email; // 로그를 위해 이메일 임시 저장
-    req.session.destroy(err => { // 세션 파기
+  if (req.session.user) {
+    const userEmail = req.session.user.email; 
+    req.session.destroy(err => { 
       if (err) {
         console.error('세션 파기 중 오류 발생:', err);
         return res.status(500).send('로그아웃 중 오류가 발생했습니다. <a href="/">홈으로</a>');
       }
-      // 세션 쿠키를 명시적으로 삭제하고 싶다면 (선택 사항)
-      // res.clearCookie('connect.sid'); // 'connect.sid'는 express-session의 기본 세션 쿠키 이름
-      
       console.log(`사용자 (${userEmail}) 로그아웃 성공 및 세션 파기 완료`);
-      res.redirect('/?logout=success'); // 로그아웃 후 홈페이지로 리다이렉트
+      res.redirect('/?logout=success'); 
     });
-  } else { // 로그인된 사용자가 없을 경우
-    res.redirect('/'); // 그냥 홈페이지로 리다이렉트
+  } else { 
+    res.redirect('/'); 
   }
 });
-// ✨✨✨ NEW /logout 라우트 끝 ✨✨✨
+
+// ✨✨✨ NEW: 현재 로그인된 사용자 정보 반환 API 엔드포인트 - 이 부분이 추가되었습니다! ✨✨✨
+app.get('/api/current-user', (req, res) => {
+  if (req.session.user) {
+    // 로그인된 사용자가 있으면 사용자 정보 반환
+    res.json({ loggedIn: true, user: req.session.user });
+  } else {
+    // 로그인된 사용자가 없으면
+    res.json({ loggedIn: false });
+  }
+});
+// ✨✨✨ NEW /api/current-user 라우트 끝 ✨✨✨
 
 
 // 7. 서버 실행

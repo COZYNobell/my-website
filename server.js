@@ -1,4 +1,4 @@
-// 1. 필요한 도구들 가져오기
+// 1. 필요한 도구들 가져오기!!
 const express = require('express');
 const axios = require('axios');
 require('dotenv').config(); // .env 파일 내용을 process.env로 로드 (최대한 위쪽에)

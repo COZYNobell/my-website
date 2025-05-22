@@ -8,7 +8,7 @@ const app = express();
 const port = 3000;
 
 // 3. API 키들을 .env 파일에서 안전하게 불러오기
-const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
+const OPENWEATHER_API_KEY = process.env.OPENWEATHERMAP_API_KEY;
 const Maps_API_KEY = process.env.Maps_API_KEY;
 
 app.use(express.static('public'));

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-TF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>나의 통합 대시보드</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; }
+        .header { background-color: #f0f0f0; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .header .favorites { /* 즐겨찾기 버튼 스타일 (임시) */ }
+        .header .auth-links { /* 인증 링크 스타일 (임시) */ }
+        .map-container { width: 100%; height: 60vh; /* 화면 높이의 60% */ background-color: #e0e0e0; /* 지도 로딩 전 배경색 */ }
+        .info-container { display: flex; padding: 20px; }
+        .info-container .weather-today { flex: 1; margin-right: 10px; padding: 15px; border: 1px solid #ccc; }
+        .info-container .weather-forecast { flex: 1; margin-left: 10px; padding: 15px; border: 1px solid #ccc; }
+        /* 간단한 CSS, 나중에 더 예쁘게 꾸밀 수 있습니다. */
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="favorites">
+            <button id="btn-favorites" disabled>⭐ 즐겨찾기 (로그인 필요)</button>
+        </div>
+        <div class="auth-links">
+            <a href="/signup.html">회원가입</a> | <a href="/login.html">로그인</a>
+        </div>
+    </header>
+
+    <main>
+        <div id="map-container" class="map-container">
+            </div>
+
+        <div id="address-display" style="text-align: center; padding: 10px; font-weight: bold;">
+            주소 정보를 불러오는 중...
+        </div>
+
+        <div class="info-container">
+            <section id="weather-today" class="weather-today">
+                <h2>오늘 날씨</h2>
+                <p>날씨 정보를 보려면 지도에서 위치를 선택하거나 로그인하세요.</p>
+            </section>
+            <section id="weather-forecast" class="weather-forecast">
+                <h2>주간 예보 (내일/모레)</h2>
+                <p>날씨 정보를 보려면 지도에서 위치를 선택하거나 로그인하세요.</p>
+            </section>
+        </div>
+    </main>
+
+    <script src="/js/dashboard.js"></script>
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAsBiqFxUsjLjxFC9waxyzP2xjK-4c0YS8&callback=initDashboardMap&language=ko&region=KR">
+    </script>
+</body>
+</html>

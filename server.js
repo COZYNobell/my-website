@@ -1,10 +1,10 @@
 // 1. 필요한 모듈 가져오기
 const express = require('express');
 const axios = require('axios');
-require('dotenv').config();
-const session = require('express-session');
-const bcrypt = require('bcrypt');
-const sqlite3 = require('sqlite3').verbose();
+require('dotenv').config(); // .env 파일 내용을 process.env로 로드 (최상단 권장)
+const session = require('express-session'); // Express 세션 모듈
+const bcrypt = require('bcrypt'); // 비밀번호 암호화 모듈
+const sqlite3 = require('sqlite3').verbose(); // sqlite3 모듈
 
 // 2. Express 앱 생성 및 포트 설정
 const app = express();
@@ -51,9 +51,9 @@ const OPENWEATHERMAP_API_KEY = process.env.OPENWEATHERMAP_API_KEY;
 const Maps_API_KEY = process.env.Maps_API_KEY;
 
 // 5. 미들웨어 설정
-app.use(express.static('public'));
-app.use(express.urlencoded({ extended: false })); // 폼 데이터 파싱
-app.use(express.json()); // ✨ NEW: JSON 요청 본문 파싱을 위해 추가 (즐겨찾기 추가 시 사용)
+app.use(express.static('public')); // 'public' 폴더의 정적 파일 제공 (html, css, js 등)
+app.use(express.urlencoded({ extended: false })); // URL 인코딩된 form 데이터 파싱
+app.use(express.json()); // JSON 요청 본문 파싱
 
 app.use(session({
   secret: '나중에 .env 로 옮길 매우 안전한 시크릿 키!',
@@ -71,7 +71,7 @@ app.get('/', (req, res) => {
     <h1>나의 멋진 웹사이트! 🌦️ 🗺️ </h1>
     <p>안녕하세요, ${loggedInUserEmail}님!</p> 
     <p><a href="/dashboard.html">✨ 통합 대시보드 보기 ✨</a></p>
-    <hr>
+    <p><a href="/subscribe.html">📧 날씨 정보 이메일 구독하기</a></p> <hr>
     <p><strong>API 키 상태 (Node.js 서버가 인식하는 값):</strong></p>
     <p>OpenWeather API 키: ${OPENWEATHERMAP_API_KEY ? '✔️ 로드됨' : '❌ 로드 안됨 (.env 확인!)'}</p>
     <p>Google Maps API 키 (서버): ${Maps_API_KEY ? '✔️ 로드됨' : '❌ 로드 안됨 (.env 확인!)'}</p>
@@ -85,8 +85,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// ... (기존 /weather, /api/weather-by-coords, /api/weather-forecast 라우트는 이전과 동일하게 유지) ...
-// 6.2. 이전 스타일 서울 날씨 페이지 (/weather)
+// 6.2. 이전 스타일 서울 날씨 페이지 (/weather) 
 app.get('/weather', async (req, res) => {
   if (!OPENWEATHERMAP_API_KEY) return res.status(500).send('서버에 OpenWeatherMap API 키가 설정되지 않았어요.');
   const city = 'Seoul';
@@ -96,6 +95,7 @@ app.get('/weather', async (req, res) => {
     res.send(`<h2>${weatherData.name}의 현재 날씨 🌞</h2><p><strong>상태:</strong> ${weatherData.weather[0].description}</p><p><strong>온도:</strong> ${weatherData.main.temp}°C</p><p><strong>체감 온도:</strong> ${weatherData.main.feels_like}°C</p><p><strong>습도:</strong> ${weatherData.main.humidity}%</p><br><p><a href="/">홈으로 돌아가기</a></p>`);
   } catch (error) { console.error('❌ 날씨 정보 가져오기 실패:', error.message); res.status(500).send('날씨 정보를 가져오는 데 실패했어요.'); }
 });
+
 // 6.3. API: 좌표 기반 현재 날씨 정보 (/api/weather-by-coords)
 app.get('/api/weather-by-coords', async (req, res) => {
   const { lat, lon } = req.query;
@@ -107,6 +107,7 @@ app.get('/api/weather-by-coords', async (req, res) => {
     res.json({ description: weatherData.weather[0].description, temperature: weatherData.main.temp, feels_like: weatherData.main.feels_like, humidity: weatherData.main.humidity, cityName: weatherData.name, icon: weatherData.weather[0].icon });
   } catch (error) { console.error('❌ 좌표 기반 날씨 정보 가져오기 실패:', error.message); res.status(500).json({ message: '날씨 정보를 가져오는 데 실패했습니다.' }); }
 });
+
 // 6.4. API: 좌표 기반 날씨 예보 정보 (/api/weather-forecast)
 app.get('/api/weather-forecast', async (req, res) => {
   const { lat, lon } = req.query;
@@ -137,8 +138,7 @@ app.post('/signup', async (req, res) => {
     db.get("SELECT * FROM users WHERE email = ?", [email], async (err, row) => {
       if (err) { console.error("회원가입 중 DB 조회 오류:", err.message); return res.status(500).send('회원가입 처리 중 오류. <a href="/signup.html">다시 시도</a>'); }
       if (row) return res.status(409).send('이미 가입된 이메일입니다. <a href="/login.html">로그인</a> 또는 <a href="/signup.html">다른 이메일로 가입</a>');
-      const saltRounds = 10;
-      const hashedPassword = await bcrypt.hash(password, saltRounds);
+      const saltRounds = 10; const hashedPassword = await bcrypt.hash(password, saltRounds);
       db.run("INSERT INTO users (email, password) VALUES (?, ?)", [email, hashedPassword], function(err) {
         if (err) { console.error("회원가입 중 DB 삽입 오류:", err.message); return res.status(500).send('회원가입 처리 중 오류. <a href="/signup.html">다시 시도</a>'); }
         console.log(`새로운 사용자 가입됨 (DB ID: ${this.lastID}, email: ${email})`);
@@ -183,86 +183,49 @@ app.get('/api/current-user', (req, res) => {
   else res.json({ loggedIn: false });
 });
 
-
-// ✨✨✨ NEW: 즐겨찾기 관련 API 엔드포인트들 - 이 부분이 추가되었습니다! ✨✨✨
-
+// 6.6. 즐겨찾기 관련 API 엔드포인트
 // 미들웨어: 요청이 로그인된 사용자에 의해서만 처리되도록 보장
 function ensureAuthenticated(req, res, next) {
-  if (req.session.user) {
-    return next(); // 로그인 되어 있으면 다음 핸들러로 진행
-  }
-  // 로그인 안 되어 있으면 401 Unauthorized 응답 (JSON 형태로)
+  if (req.session.user) return next();
   res.status(401).json({ message: '로그인이 필요합니다. 먼저 로그인해주세요.' }); 
 }
-
-// 1. 즐겨찾기 추가 API (POST /api/favorites)
+// 6.6.1. 즐겨찾기 추가 API (POST /api/favorites)
 app.post('/api/favorites', ensureAuthenticated, (req, res) => {
-  // 요청 본문에서 즐겨찾기 정보 추출 (클라이언트에서 JSON 형태로 보낼 것을 가정)
   const { location_name, latitude, longitude } = req.body; 
-  const userId = req.session.user.id; // 현재 로그인한 사용자의 ID
-
-  if (!location_name || latitude === undefined || longitude === undefined) {
-    return res.status(400).json({ message: '장소 이름, 위도, 경도가 모두 필요합니다.' });
-  }
-
+  const userId = req.session.user.id;
+  if (!location_name || latitude === undefined || longitude === undefined) return res.status(400).json({ message: '장소 이름, 위도, 경도가 모두 필요합니다.' });
   const sql = `INSERT INTO favorites (user_id, location_name, latitude, longitude) VALUES (?, ?, ?, ?)`;
   db.run(sql, [userId, location_name, latitude, longitude], function(err) {
     if (err) {
       console.error("즐겨찾기 추가 중 DB 오류:", err.message);
-      // UNIQUE 제약 조건 위반 (이미 같은 장소를 즐겨찾기 했을 경우) 등 다양한 오류 가능성
-      if (err.message.includes('UNIQUE constraint failed')) {
-          return res.status(409).json({ message: '이미 즐겨찾기에 추가된 장소일 수 있습니다.' });
-      }
+      if (err.message.includes('UNIQUE constraint failed')) return res.status(409).json({ message: '이미 즐겨찾기에 추가된 장소일 수 있습니다.' });
       return res.status(500).json({ message: '즐겨찾기 추가 중 서버 오류가 발생했습니다.' });
     }
-    // this.lastID는 방금 INSERT된 행의 ID
-    res.status(201).json({ 
-        message: '즐겨찾기에 추가되었습니다.', 
-        favorite: {
-            id: this.lastID,
-            user_id: userId,
-            location_name,
-            latitude,
-            longitude
-        }
-    });
+    res.status(201).json({ message: '즐겨찾기에 추가되었습니다.', favorite: { id: this.lastID, user_id: userId, location_name, latitude, longitude } });
     console.log(`사용자 ID ${userId}가 즐겨찾기 추가: ${location_name} (Fav ID: ${this.lastID})`);
   });
 });
-
-// 2. 현재 사용자의 즐겨찾기 목록 조회 API (GET /api/favorites)
+// 6.6.2. 현재 사용자의 즐겨찾기 목록 조회 API (GET /api/favorites)
 app.get('/api/favorites', ensureAuthenticated, (req, res) => {
   const userId = req.session.user.id;
-
   const sql = `SELECT id, location_name, latitude, longitude, created_at FROM favorites WHERE user_id = ? ORDER BY created_at DESC`;
   db.all(sql, [userId], (err, rows) => {
-    if (err) {
-      console.error("즐겨찾기 조회 중 DB 오류:", err.message);
-      return res.status(500).json({ message: '즐겨찾기 목록을 불러오는 중 오류가 발생했습니다.' });
-    }
-    res.json(rows); // 조회된 즐겨찾기 목록 (배열) 반환
+    if (err) { console.error("즐겨찾기 조회 중 DB 오류:", err.message); return res.status(500).json({ message: '즐겨찾기 목록을 불러오는 중 오류가 발생했습니다.' }); }
+    res.json(rows);
   });
 });
-
-// 3. 특정 즐겨찾기 삭제 API (DELETE /api/favorites/:id)
+// 6.6.3. 특정 즐겨찾기 삭제 API (DELETE /api/favorites/:id)
 app.delete('/api/favorites/:id', ensureAuthenticated, (req, res) => {
   const favoriteId = req.params.id; 
   const userId = req.session.user.id;
-
   const sql = `DELETE FROM favorites WHERE id = ? AND user_id = ?`;
   db.run(sql, [favoriteId, userId], function(err) {
-    if (err) {
-      console.error("즐겨찾기 삭제 중 DB 오류:", err.message);
-      return res.status(500).json({ message: '즐겨찾기 삭제 중 오류가 발생했습니다.' });
-    }
-    if (this.changes === 0) { 
-      return res.status(404).json({ message: '해당 즐겨찾기를 찾을 수 없거나 삭제할 권한이 없습니다.' });
-    }
+    if (err) { console.error("즐겨찾기 삭제 중 DB 오류:", err.message); return res.status(500).json({ message: '즐겨찾기 삭제 중 오류가 발생했습니다.' }); }
+    if (this.changes === 0) return res.status(404).json({ message: '해당 즐겨찾기를 찾을 수 없거나 삭제할 권한이 없습니다.' });
     res.json({ message: '즐겨찾기에서 삭제되었습니다.', favoriteId: favoriteId });
     console.log(`사용자 ID ${userId}가 즐겨찾기 삭제: Fav ID ${favoriteId}`);
   });
 });
-// ✨✨✨ NEW 즐겨찾기 API 엔드포인트 끝 ✨✨✨
 
 
 // 7. 서버 실행
@@ -273,4 +236,3 @@ app.listen(port, () => {
   if (Maps_API_KEY) console.log('🔵 Google Maps API 키 (서버용) 로드됨.');
   else console.warn('🟡 참고: Google Maps API 키 (서버용) 로드 실패.');
 });
-//

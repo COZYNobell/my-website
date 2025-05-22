@@ -1,0 +1,78 @@
+name: Deploy Node.js App to EC2 (SSH) # 이 워크플로우의 이름입니다.
+
+on:
+  push:
+    branches:
+      - main # 'main' 브랜치에 코드가 푸시될 때마다 이 워크플로우가 실행됩니다.
+
+jobs:
+  deploy: # 'deploy'라는 이름의 작업을 정의합니다.
+    name: Deploy to EC2 server # 이 작업의 이름입니다.
+    runs-on: ubuntu-latest # GitHub Actions가 이 작업을 실행할 가상 환경입니다. (깨끗한 Ubuntu)
+
+    steps: # 작업 안에서 순서대로 실행될 단계들입니다.
+      - name: 🛎️ Checkout code from GitHub
+        uses: actions/checkout@v4 # GitHub 저장소에서 현재 코드를 가져오는 매우 유명한 액션입니다.
+
+      - name: ⚙️ Setup Node.js environment
+        uses: actions/setup-node@v4 # Node.js 실행 환경을 설정해주는 액션입니다.
+        with:
+          node-version: '18' # EC2 서버에 설치한 Node.js 버전과 맞춰주세요 (예: '18.20.8'이면 '18'로도 충분합니다)
+
+      - name: 📦 Install dependencies
+        run: npm ci # package-lock.json을 사용해서 의존성 패키지들을 정확하고 빠르게 설치합니다.
+
+      # 만약 프로젝트 빌드 과정이 필요하다면 여기에 추가합니다.
+      # (지금 우리 간단한 server.js 앱은 별도의 빌드 과정이 필요 없어요.)
+      # - name: 🏗️ Build project
+      #   run: npm run build
+
+      - name: 🚚 Deploy to EC2 server via SSH
+        uses: appleboy/ssh-action@v1.0.3 # SSH로 EC2에 접속해서 명령을 실행하는 유명한 액션입니다. (버전은 최신으로 확인해보세요)
+        with:
+          host: ${{ secrets.EC2_HOST }} # GitHub Secrets에 저장한 EC2 서버 주소
+          username: ${{ secrets.EC2_USERNAME }} # GitHub Secrets에 저장한 EC2 접속 사용자 이름 (예: ec2-user)
+          key: ${{ secrets.EC2_SSH_KEY }} # GitHub Secrets에 저장한 SSH 비밀키
+          port: 22 # SSH 접속 포트 (기본값은 22이므로 생략 가능)
+          script: | # 아래부터는 EC2 서버 내부에서 실행될 명령어들입니다.
+            # 1. 애플리케이션 코드가 저장될 디렉토리 경로를 변수로 지정합니다.
+            #    EC2_USERNAME은 GitHub Secrets에서 가져온 사용자 이름입니다.
+            APP_DIR="/home/${{ secrets.EC2_USERNAME }}/my-website"
+            echo "배포 디렉토리: $APP_DIR"
+
+            # 2. APP_DIR 디렉토리가 없으면 GitHub에서 프로젝트를 clone 하고, 있으면 최신 코드를 pull 합니다.
+            if [ ! -d "$APP_DIR" ]; then
+              echo "디렉토리가 존재하지 않아 새로 clone 합니다: $APP_DIR"
+              git clone https://github.com/${{ github.repository }}.git "$APP_DIR"
+              cd "$APP_DIR"
+            else
+              echo "디렉토리가 존재합니다. 최신 코드를 pull 합니다: $APP_DIR"
+              cd "$APP_DIR"
+              # 혹시 모를 로컬 변경사항과의 충돌을 피하기 위해 stash 사용
+              echo "현재 브랜치에서 변경사항 임시 저장 (git stash)"
+              git stash push --include-untracked || true # 추적되지 않는 파일도 포함하여 stash, 에러 나도 계속 진행
+              echo "원격 저장소에서 최신 코드 가져오기 (git pull origin main)"
+              git pull origin main
+              echo "임시 저장된 변경사항 다시 적용 시도 (git stash pop)"
+              # stash pop 시 충돌이 날 수 있으므로, 실패해도 계속 진행하도록 || true 추가
+              git stash pop || true 
+            fi
+
+            echo "현재 브랜치 정보:"
+            git branch
+
+            echo "운영 환경용 의존성 패키지 설치 (npm ci --production)"
+            npm ci --production # 개발용 패키지는 제외하고 설치하여 용량 줄임
+
+            echo "pm2로 애플리케이션 재시작 또는 시작"
+            # 'my-node-app'이라는 이름으로 pm2에서 앱을 관리합니다.
+            # 이미 실행 중이면 재시작하고, 없으면 새로 시작합니다.
+            # pm2 resurrect는 서버 재부팅 시 저장된 pm2 프로세스를 되살립니다. (여기서는 시작/재시작에 더 중점)
+            if pm2 list | grep -q "my-node-app"; then
+              pm2 restart my-node-app
+            else
+              pm2 start server.js --name "my-node-app"
+            fi
+            pm2 save # 현재 실행 중인 pm2 프로세스 목록을 저장 (서버 재부팅 시 자동 시작을 위해)
+
+            echo "✅ EC2 서버 배포 완료!"

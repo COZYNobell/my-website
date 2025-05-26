@@ -10,23 +10,22 @@ const mysql = require('mysql2/promise');
 const app = express();
 const port = 3000;
 
-// ✨ ---- DB 연결 정보 디버깅 로그 추가 시작 ---- ✨
+// 디버깅 로그 (환경 변수 로드 확인)
 console.log("애플리케이션 시작 - .env 파일 로드 시점 이후");
 console.log("DB_HOST 환경 변수:", process.env.DB_HOST);
 console.log("DB_USER 환경 변수:", process.env.DB_USER);
 console.log("DB_PASSWORD 환경 변수 (존재 여부만):", process.env.DB_PASSWORD ? "설정됨" : "설정 안됨 또는 비어있음");
-console.log("DB_NAME 환경 변수:", process.env.DB_NAME); // ✨ 이 값이 'seoul-free-db'로 정확히 나오는지 확인!
+console.log("DB_NAME 환경 변수:", process.env.DB_NAME);
 console.log("SESSION_SECRET 환경 변수 (존재 여부만):", process.env.SESSION_SECRET ? "설정됨" : "설정 안됨 또는 비어있음");
 console.log("OPENWEATHERMAP_API_KEY 환경 변수 (존재 여부만):", process.env.OPENWEATHERMAP_API_KEY ? "설정됨" : "설정 안됨 또는 비어있음");
 console.log("Maps_API_KEY 환경 변수 (존재 여부만):", process.env.Maps_API_KEY ? "설정됨" : "설정 안됨 또는 비어있음");
-// ✨ ---- DB 연결 정보 디버깅 로그 추가 끝 ---- ✨
 
-// MySQL Connection Pool 설정
+// ✨ MySQL Connection Pool 설정 (database 옵션 제거) ✨
 const dbPool = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME, // 여기가 중요!
+  // database: process.env.DB_NAME, // <--- ✨ 이 라인을 주석 처리 또는 삭제!
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
@@ -34,13 +33,23 @@ const dbPool = mysql.createPool({
 
 // 데이터베이스 연결 테스트 및 테이블 생성 함수
 async function initializeDatabase() {
-  let connection; // ✨ connection 변수 선언 위치 변경
+  let connection;
   try {
     connection = await dbPool.getConnection();
-    // ✨ 연결 시도 직후 DB_NAME 실제 사용값 로깅
-    console.log(`MySQL 연결 시도 중... DB_NAME: '${connection.config.database}' (풀 설정값) vs '${process.env.DB_NAME}' (.env 값)`);
-    console.log(`${connection.config.database || process.env.DB_NAME} (MySQL) 데이터베이스에 성공적으로 연결되었습니다.`);
+    console.log(`MySQL 서버 (${process.env.DB_HOST})에 성공적으로 연결되었습니다. (DB 선택 전)`);
+    
+    const dbNameToUse = process.env.DB_NAME;
+    if (!dbNameToUse) {
+        console.error("DB_NAME 환경 변수가 설정되지 않았습니다! 초기화를 중단합니다.");
+        throw new Error("DB_NAME is not set in environment variables");
+    }
 
+    // ✨ 수동으로 데이터베이스 선택 ✨
+    console.log(`'USE \`${dbNameToUse}\`' 실행 시도...`);
+    await connection.query(`USE \`${dbNameToUse}\``); // ``(백틱)으로 DB 이름 감싸기
+    console.log(`'${dbNameToUse}' 데이터베이스 선택 성공!`);
+
+    // users 테이블 생성
     await connection.query(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTO_INCREMENT,
@@ -51,6 +60,7 @@ async function initializeDatabase() {
     `);
     console.log("users 테이블이 성공적으로 준비되었거나 이미 존재합니다.");
 
+    // favorites 테이블 생성
     await connection.query(`
       CREATE TABLE IF NOT EXISTS favorites (
         id INTEGER PRIMARY KEY AUTO_INCREMENT,
@@ -66,9 +76,9 @@ async function initializeDatabase() {
 
   } catch (error) {
     console.error("데이터베이스 초기화 중 오류 발생:", error.message);
-    // ✨ 오류 발생 시 사용된 DB_NAME도 로깅
     console.error("오류 발생 시 DB_NAME 환경 변수 값:", process.env.DB_NAME);
-    // process.exit(1); // 심각한 오류 시 프로세스 종료 고려
+    // 애플리케이션 시작에 치명적인 오류일 수 있으므로, 필요시 프로세스 종료
+    // process.exit(1); 
   } finally {
     if (connection) {
       connection.release();
@@ -79,7 +89,7 @@ async function initializeDatabase() {
 
 initializeDatabase();
 
-// API 키 환경변수에서 로드 (이미 위에서 로깅됨)
+// API 키 (이미 위에서 로깅됨)
 const OPENWEATHERMAP_API_KEY = process.env.OPENWEATHERMAP_API_KEY;
 const Maps_API_KEY = process.env.Maps_API_KEY;
 
@@ -94,9 +104,13 @@ app.use(session({
   cookie: { secure: false }
 }));
 
-// 라우트 핸들러 (이하 동일)
-// ... (app.get('/'), app.get('/weather'), app.get('/api/weather-by-coords'), app.get('/api/weather-forecast') 코드는 이전과 동일) ...
-// 메인 홈페이지 (루트 경로: /)
+// 라우트 핸들러 (이하 동일 - 이전 버전의 전체 코드를 참고하여 여기에 붙여넣으시면 됩니다)
+// ... (app.get('/'), app.get('/weather'), app.get('/api/weather-by-coords'), app.get('/api/weather-forecast') ...)
+// ... (app.post('/signup'), app.post('/login'), app.get('/logout') ...)
+// ... (app.get('/api/current-user'), 즐겨찾기 API들: app.post/get/delete('/api/favorites') ...)
+
+// --- 라우트 핸들러 부분 (이전 전체 코드에서 복사) ---
+// 6.1. 메인 홈페이지 (루트 경로: /)
 app.get('/', (req, res) => {
   const loggedInUserEmail = req.session.user ? req.session.user.email : '방문자';
   res.send(`
@@ -118,7 +132,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// 이전 스타일 서울 날씨 페이지 (/weather) 
+// 6.2. 이전 스타일 서울 날씨 페이지 (/weather) 
 app.get('/weather', async (req, res) => {
   if (!OPENWEATHERMAP_API_KEY) return res.status(500).send('서버에 OpenWeatherMap API 키가 설정되지 않았어요.');
   const city = 'Seoul';
@@ -129,7 +143,7 @@ app.get('/weather', async (req, res) => {
   } catch (error) { console.error('❌ 날씨 정보 가져오기 실패:', error.message); res.status(500).send('날씨 정보를 가져오는 데 실패했어요.'); }
 });
 
-// API: 좌표 기반 현재 날씨 정보 (/api/weather-by-coords)
+// 6.3. API: 좌표 기반 현재 날씨 정보 (/api/weather-by-coords)
 app.get('/api/weather-by-coords', async (req, res) => {
   const { lat, lon } = req.query;
   if (!lat || !lon) return res.status(400).json({ message: '위도(lat)와 경도(lon) 파라미터가 필요합니다.' });
@@ -141,7 +155,7 @@ app.get('/api/weather-by-coords', async (req, res) => {
   } catch (error) { console.error('❌ 좌표 기반 날씨 정보 가져오기 실패:', error.message); res.status(500).json({ message: '날씨 정보를 가져오는 데 실패했습니다.' }); }
 });
 
-// API: 좌표 기반 날씨 예보 정보 (/api/weather-forecast)
+// 6.4. API: 좌표 기반 날씨 예보 정보 (/api/weather-forecast)
 app.get('/api/weather-forecast', async (req, res) => {
   const { lat, lon } = req.query;
   if (!lat || !lon) return res.status(400).json({ message: '위도(lat)와 경도(lon) 파라미터가 필요합니다.' });
@@ -164,10 +178,13 @@ app.get('/api/weather-forecast', async (req, res) => {
 
 // 사용자 회원가입 처리 라우트 (/signup) - POST 방식
 app.post('/signup', async (req, res) => {
-  const connection = await dbPool.getConnection();
+  let connection; // ✨
   try {
+    connection = await dbPool.getConnection(); // ✨
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).send('이메일과 비밀번호를 모두 입력해주세요. <a href="/signup.html">다시 시도</a>');
+    // ✨ DB 선택은 initializeDatabase에서 이미 처리되었거나, 풀 생성 시 database 옵션으로 처리됨
+    // await connection.query(`USE \`${process.env.DB_NAME}\``); 
     const [rows] = await connection.query("SELECT * FROM users WHERE email = ?", [email]);
     if (rows.length > 0) return res.status(409).send('이미 가입된 이메일입니다. <a href="/login.html">로그인</a> 하시거나 다른 이메일로 가입해주세요. <a href="/signup.html">다시 시도</a>');
     const saltRounds = 10; const hashedPassword = await bcrypt.hash(password, saltRounds);
@@ -179,11 +196,14 @@ app.post('/signup', async (req, res) => {
 });
 
 // 사용자 로그인 처리 라우트 (/login) - POST 방식
-app.post('/login', async (req, res) => { // ✨ async로 변경 (bcrypt.compare가 await 사용하므로)
-  const connection = await dbPool.getConnection();
+app.post('/login', async (req, res) => {
+  let connection; // ✨
   try {
+    connection = await dbPool.getConnection(); // ✨
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).send('이메일과 비밀번호를 모두 입력해주세요. <a href="/login.html">다시 시도</a>');
+    // ✨ DB 선택은 initializeDatabase에서 이미 처리되었거나, 풀 생성 시 database 옵션으로 처리됨
+    // await connection.query(`USE \`${process.env.DB_NAME}\``);
     const [rows] = await connection.query("SELECT * FROM users WHERE email = ?", [email]);
     if (rows.length === 0) return res.status(401).send('가입되지 않은 이메일이거나 비밀번호가 일치하지 않습니다. <a href="/login.html">다시 시도</a>');
     const user = rows[0];
@@ -197,22 +217,79 @@ app.post('/login', async (req, res) => { // ✨ async로 변경 (bcrypt.compare�
 });
 
 // 사용자 로그아웃 처리 라우트 (/logout) - GET 방식
-app.get('/logout', (req, res) => { /* ... (이전 코드와 동일) ... */ });
+app.get('/logout', (req, res) => {
+  if (req.session.user) {
+    const userEmail = req.session.user.email; 
+    req.session.destroy(err => { 
+      if (err) { console.error('세션 파기 중 오류 발생:', err); return res.status(500).send('로그아웃 중 오류. <a href="/">홈으로</a>'); }
+      console.log(`사용자 (${userEmail}) 로그아웃 성공 및 세션 파기 완료`);
+      res.redirect('/?logout=success'); 
+    });
+  } else { res.redirect('/'); }
+});
 
 // API: 현재 로그인된 사용자 정보 (/api/current-user)
-app.get('/api/current-user', (req, res) => { /* ... (이전 코드와 동일) ... */ });
+app.get('/api/current-user', (req, res) => {
+  if (req.session.user) res.json({ loggedIn: true, user: req.session.user });
+  else res.json({ loggedIn: false });
+});
 
 // 즐겨찾기 관련 API 엔드포인트들
-function ensureAuthenticated(req, res, next) { /* ... (이전 코드와 동일) ... */ }
-app.post('/api/favorites', ensureAuthenticated, async (req, res) => { /* ... (이전 코드와 동일) ... */ });
-app.get('/api/favorites', ensureAuthenticated, async (req, res) => { /* ... (이전 코드와 동일) ... */ });
-app.delete('/api/favorites/:id', ensureAuthenticated, async (req, res) => { /* ... (이전 코드와 동일) ... */ });
+function ensureAuthenticated(req, res, next) {
+  if (req.session.user) return next();
+  res.status(401).json({ message: '로그인이 필요합니다. 먼저 로그인해주세요.' }); 
+}
+app.post('/api/favorites', ensureAuthenticated, async (req, res) => {
+  let connection; // ✨
+  try {
+    connection = await dbPool.getConnection(); // ✨
+    const { location_name, latitude, longitude } = req.body; 
+    const userId = req.session.user.id;
+    if (!location_name || latitude === undefined || longitude === undefined) return res.status(400).json({ message: '장소 이름, 위도, 경도가 모두 필요합니다.' });
+    // ✨ DB 선택은 initializeDatabase에서 이미 처리되었거나, 풀 생성 시 database 옵션으로 처리됨
+    // await connection.query(`USE \`${process.env.DB_NAME}\``);
+    const sql = `INSERT INTO favorites (user_id, location_name, latitude, longitude) VALUES (?, ?, ?, ?)`;
+    const [result] = await connection.query(sql, [userId, location_name, latitude, longitude]);
+    res.status(201).json({ message: '즐겨찾기에 추가되었습니다.', favorite: { id: result.insertId, user_id: userId, location_name, latitude, longitude } });
+    console.log(`사용자 ID ${userId}가 즐겨찾기 추가: ${location_name} (Fav ID: ${result.insertId})`);
+  } catch (error) { console.error("즐겨찾기 추가 중 DB 오류:", error.message); if (error.code === 'ER_DUP_ENTRY' || error.message.includes('UNIQUE constraint failed')) return res.status(409).json({ message: '이미 즐겨찾기에 추가된 장소일 수 있습니다.' }); return res.status(500).json({ message: '즐겨찾기 추가 중 서버 오류가 발생했습니다.' });
+  } finally { if (connection) connection.release(); }
+});
+app.get('/api/favorites', ensureAuthenticated, async (req, res) => {
+  let connection; // ✨
+  try {
+    connection = await dbPool.getConnection(); // ✨
+    const userId = req.session.user.id;
+    // ✨ DB 선택은 initializeDatabase에서 이미 처리되었거나, 풀 생성 시 database 옵션으로 처리됨
+    // await connection.query(`USE \`${process.env.DB_NAME}\``);
+    const sql = `SELECT id, location_name, latitude, longitude, created_at FROM favorites WHERE user_id = ? ORDER BY created_at DESC`;
+    const [rows] = await connection.query(sql, [userId]);
+    res.json(rows);
+  } catch (error) { console.error("즐겨찾기 조회 중 DB 오류:", error.message); return res.status(500).json({ message: '즐겨찾기 목록을 불러오는 중 오류가 발생했습니다.' });
+  } finally { if (connection) connection.release(); }
+});
+app.delete('/api/favorites/:id', ensureAuthenticated, async (req, res) => {
+  let connection; // ✨
+  try {
+    connection = await dbPool.getConnection(); // ✨
+    const favoriteId = req.params.id; 
+    const userId = req.session.user.id;
+    // ✨ DB 선택은 initializeDatabase에서 이미 처리되었거나, 풀 생성 시 database 옵션으로 처리됨
+    // await connection.query(`USE \`${process.env.DB_NAME}\``);
+    const sql = `DELETE FROM favorites WHERE id = ? AND user_id = ?`;
+    const [result] = await connection.query(sql, [favoriteId, userId]);
+    if (result.affectedRows === 0) return res.status(404).json({ message: '해당 즐겨찾기를 찾을 수 없거나 삭제할 권한이 없습니다.' });
+    res.json({ message: '즐겨찾기에서 삭제되었습니다.', favoriteId: favoriteId });
+    console.log(`사용자 ID ${userId}가 즐겨찾기 삭제: Fav ID ${favoriteId}`);
+  } catch (error) { console.error("즐겨찾기 삭제 중 DB 오류:", error.message); return res.status(500).json({ message: '즐겨찾기 삭제 중 오류가 발생했습니다.' });
+  } finally { if (connection) connection.release(); }
+});
+// --- 라우트 핸들러 부분 끝 ---
 
 
 // 서버 실행
 app.listen(port, () => {
   console.log(`와! ${port}번 포트에서 웹사이트가 열렸어요! 브라우저에서 http://localhost:${port} 로 접속해보세요!`);
-  // ✨ API 키 로드 확인 로그는 위쪽 디버깅 로그에서 이미 확인하므로 여기서는 생략하거나 유지해도 됩니다.
   if (OPENWEATHERMAP_API_KEY) console.log('🟢 OpenWeatherMap API 키 로드됨.');
   else console.error('🔴 중요! OpenWeatherMap API 키 로드 실패!');
   if (Maps_API_KEY) console.log('🔵 Google Maps API 키 (서버용) 로드됨.');

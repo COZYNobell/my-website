@@ -14,17 +14,16 @@ jobs:
       - name: 🛎️ Checkout code from GitHub
         uses: actions/checkout@v4 # 코드 가져오기 액션 (GitHub Actions Runner 로컬에 코드 체크아웃)
 
-      # Node.js 환경 설정 (이 단계는 GitHub Actions Runner에서 사용됨, EC2 서버와는 별개)
-      # 만약 빌드 과정 등이 Runner에서 필요하다면 여기에 node-version 설정이 의미있음.
-      # 지금은 EC2에서 직접 npm ci 등을 하므로 Runner의 Node.js 버전은 크게 중요하지 않을 수 있음.
-      - name: ⚙️ Setup Node.js environment on Runner (Optional)
+      # Node.js 환경 설정 (이 단계는 GitHub Actions Runner에서 사용됨)
+      # EC2 서버의 Node.js 버전과 일치시킬 필요는 없지만, 빌드/테스트 시 일관성을 위해 설정할 수 있습니다.
+      - name: ⚙️ Setup Node.js environment on Runner (Optional for this workflow)
         uses: actions/setup-node@v4
         with:
           node-version: '18' # 예시 버전
 
       # EC2 서버에 배포하는 단계
       - name: 🚚 Deploy to EC2 server via SSH
-        uses: appleboy/ssh-action@v1.0.3 # SSH 액션 사용
+        uses: appleboy/ssh-action@v1.0.3 # SSH 액션 사용 (또는 최신 안정 버전 확인)
         with:
           host: ${{ secrets.EC2_HOST }} # GitHub Secrets에서 EC2 호스트 주소 가져오기
           username: ${{ secrets.EC2_USERNAME }} # GitHub Secrets에서 EC2 사용자 이름 가져오기
@@ -35,21 +34,18 @@ jobs:
             APP_DIR="/home/${{ secrets.EC2_USERNAME }}/my-website"
             echo "배포 디렉토리: $APP_DIR"
 
-            # 2. ✨ 기존 디렉토리가 있다면 안전하게 삭제 (항상 새로 clone 하기 위해) ✨
+            # 2. 기존 디렉토리가 있다면 안전하게 삭제 (항상 새로 clone 하기 위해)
             if [ -d "$APP_DIR" ]; then
               echo "기존 배포 디렉토리($APP_DIR)를 삭제합니다."
-              # 이 명령은 secrets.EC2_USERNAME 사용자의 권한으로 실행됩니다.
-              # 해당 사용자가 자신의 홈 디렉토리 내의 폴더를 삭제하는 것은 보통 sudo 없이 가능합니다.
               rm -rf "$APP_DIR"
             fi
             
-            # 3. ✨ 항상 새로 GitHub 저장소 clone ✨
+            # 3. GitHub 저장소 새로 clone
             echo "GitHub 저장소를 새로 clone 합니다: $APP_DIR"
-            # 특정 브랜치를 명시하는 것이 좋습니다 (예: --branch main)
             git clone --branch main https://github.com/${{ github.repository }}.git "$APP_DIR"
             
-            # clone 성공 여부 확인 (중요!)
-            if [ ! -d "$APP_DIR/.git" ]; then # .git 폴더 존재 여부로 clone 성공 판단
+            # clone 성공 여부 확인
+            if [ ! -d "$APP_DIR/.git" ]; then
               echo "git clone에 실패했거나, $APP_DIR 디렉토리가 올바르게 생성되지 않았습니다. 스크립트를 중단합니다."
               exit 1 # 오류 발생 시 스크립트 중단
             fi
@@ -58,49 +54,39 @@ jobs:
             cd "$APP_DIR"
             echo "현재 작업 디렉토리: $(pwd)"
 
-            # 4. ✨ .env 파일 자동 생성 (API 키 및 DB 접속 정보 포함) ✨
+            # 4. .env 파일 자동 생성 (API 키 및 DB 접속 정보 포함)
             echo "Creating .env file on EC2 server..."
-            # 기존 .env 파일이 있다면 덮어쓰고, 없다면 새로 생성합니다.
-            # printf는 변수 내 특수문자 처리에 용이하며, 각 라인 끝에 개행문자(\n)를 넣어줍니다.
             
-            # 날씨 및 지도 API 키
+            # 기존 .env 파일이 있다면 덮어쓰기 위해 '>' 사용, 이후에는 '>>'로 추가
             printf "OPENWEATHERMAP_API_KEY=${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }}\n" > .env
             printf "Maps_API_KEY=${{ secrets.Maps_API_KEY_SECRET }}\n" >> .env
             
-            # 데이터베이스 접속 정보 (RDS 사용 시)
-            # 아래 Secret들이 GitHub에 미리 정의되어 있어야 합니다.
+            # ✨ 데이터베이스 접속 정보 추가 (GitHub Secrets에서 가져옴) ✨
             printf "DB_HOST=${{ secrets.DB_HOST }}\n" >> .env
             printf "DB_USER=${{ secrets.DB_USER }}\n" >> .env
             printf "DB_PASSWORD=${{ secrets.DB_PASSWORD }}\n" >> .env
             printf "DB_NAME=${{ secrets.DB_NAME }}\n" >> .env
             
-            # 세션 시크릿 키
+            # ✨ 세션 시크릿 키 추가 (GitHub Secrets에서 가져옴) ✨
             printf "SESSION_SECRET=${{ secrets.SESSION_SECRET }}\n" >> .env
             
             echo ".env file created successfully."
-            echo "--- .env file content (for debugging, keys will be masked by GitHub) ---"
-            cat .env # 생성된 .env 파일 내용 확인 (GitHub 로그에서는 Secret 값이 ***로 마스킹됨)
-            echo "----------------------------------------------------------------------"
+            echo "--- .env file content (secrets will be masked by GitHub Actions logs) ---"
+            cat .env 
+            echo "------------------------------------------------------------------------"
 
             # 5. 운영 환경용 의존성 패키지 설치
             echo "운영 환경용 의존성 패키지 설치 (npm ci --production)"
             # npm ci는 package-lock.json을 사용하며, 더 빠르고 안정적인 설치를 제공합니다.
-            # 만약 package-lock.json 파일이 없다면 npm install --production 을 사용해야 합니다.
+            # 이 명령을 사용하려면 package-lock.json 파일이 저장소에 반드시 포함되어 있어야 합니다.
             npm ci --production 
 
             # 6. PM2로 애플리케이션 관리 (삭제 후 시작 및 상태 저장)
             echo "pm2로 애플리케이션 관리"
-            # 기존에 같은 이름으로 실행 중인 앱이 있다면 삭제 (실패해도 다음 단계 진행)
-            pm2 delete my-node-app || true 
-            # server.js를 'my-node-app'이라는 이름으로 pm2로 시작
+            pm2 delete my-node-app || true # 기존 앱이 없어도 오류 없이 진행
             pm2 start server.js --name "my-node-app"
-            # 현재 실행 중인 pm2 프로세스 목록을 저장 (서버 재부팅 시 자동 실행을 위해)
-            pm2 save
-            # 시스템 재부팅 시 PM2가 자동으로 시작되도록 설정 (최초 한번 또는 필요시)
-            # 이 명령어는 권한이 필요할 수 있으며, 이미 설정되어 있다면 매번 실행할 필요는 없을 수 있습니다.
-            # pm2 startup # 이 명령은 실행 후 추가적인 명령을 터미널에 입력하라고 안내할 수 있습니다. 
-                        # 자동화 스크립트에서는 주의가 필요합니다. 
-                        # 보통은 user data 스크립트에서 한번 설정합니다.
+            pm2 save # 현재 PM2 프로세스 목록 저장 (서버 재부팅 시 자동 실행 위함)
+            # pm2 startup # 시스템 부팅 시 PM2 자동 시작 (최초 설정 또는 필요시, user_data에서 하는 것이 더 일반적)
 
             echo "✅ EC2 서버 배포 완료! pm2 list로 상태 확인:"
             pm2 list # 배포 마지막에 pm2 상태를 로그로 남김

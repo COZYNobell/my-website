@@ -1,0 +1,11 @@
+# .dockerignore
+
+node_modules
+npm-debug.log
+Dockerfile
+.dockerignore
+.git
+.gitignore
+*.pem
+my_website.db # SQLite DB 파일 (만약 로컬에 있다면)
+.env # 실제 .env 파일은 이미지에 포함시키지 않습니다. 환경 변수로 주입합니다.

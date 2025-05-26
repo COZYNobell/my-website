@@ -1,0 +1,104 @@
+name: Build and Deploy Docker Image to EC2 (via ECR)
+
+on:
+  push:
+    branches:
+      - main # 'main' 브랜치에 푸시될 때 실행
+
+jobs:
+  build-and-push-to-ecr: # 1단계: Docker 이미지 빌드 및 ECR에 푸시
+    name: Build and Push to ECR
+    runs-on: ubuntu-latest # GitHub Actions 실행 환경
+
+    steps:
+      - name: 🛎️ Checkout code
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4 # AWS 자격 증명 설정 액션
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }} # GitHub Secret으로 저장된 AWS 액세스 키 ID
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }} # GitHub Secret으로 저장된 AWS 비밀 액세스 키
+          aws-region: ap-northeast-2 # 또는 메이슨님의 ECR/EC2 리전
+
+      - name: 🏷️ Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2 # ECR 로그인 액션
+
+      - name: 🏗️ Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }} # ECR 로그인 단계에서 얻은 레지스트리 주소
+          ECR_REPOSITORY: my-node-app # 메이슨님 ECR 리포지토리 이름
+          IMAGE_TAG: ${{ github.sha }} # Git 커밋 해시를 이미지 태그로 사용 (또는 다른 태그 전략)
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT # 다음 단계에서 사용할 이미지 URI 출력
+
+  deploy-to-ec2: # 2단계: EC2에 접속하여 새 Docker 이미지로 업데이트
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: build-and-push-to-ecr # 이전 'build-and-push-to-ecr' 작업이 성공해야 실행됨
+
+    steps:
+      - name: ⚙️ Configure AWS credentials (EC2 접속용이 아닌, SSM 등 다른 AWS 서비스 사용 시 필요할 수 있음)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2 # 또는 메이슨님의 EC2 리전
+
+      - name: 🚚 Deploy to EC2 instance by pulling new image and restarting container
+        uses: appleboy/ssh-action@v1.0.3 # 기존 SSH 액션 사용
+        with:
+          host: ${{ secrets.EC2_HOST }} # EC2 Public IP (새로 만든 EC2 IP로 업데이트 필요)
+          username: ${{ secrets.EC2_USERNAME }} # 예: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }} # EC2 접속용 SSH 비밀키 (이것은 ECR 접근 키와 다름!)
+          script: |
+            # ECR에서 새 이미지 pull (IAM 역할이 EC2에 부여되어 ECR 접근 권한이 있다면 aws ecr get-login-password 불필요)
+            # 또는, EC2 user_data에서 주기적으로 docker login 하도록 설정
+            # 가장 간단하게는 EC2에 ECR ReadOnly 권한을 가진 IAM 역할을 부여합니다.
+            aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin ${{ steps.build-image.outputs.ECR_REGISTRY }}
+            
+            IMAGE_URI="${{ needs.build-and-push-to-ecr.outputs.image_uri }}" # 이전 단계에서 전달받은 이미지 URI
+            CONTAINER_NAME="my-running-app" # 실행 중인 컨테이너 이름 (docker run 시 --name으로 지정한 이름)
+
+            echo "새로운 이미지 URI: $IMAGE_URI"
+            echo "EC2에서 Docker 이미지 업데이트를 시작합니다..."
+
+            # 1. 최신 이미지 pull
+            docker pull $IMAGE_URI
+
+            # 2. 기존 컨테이너 중지 및 삭제 (만약 실행 중이라면)
+            if [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
+                echo "기존 $CONTAINER_NAME 컨테이너를 중지하고 삭제합니다."
+                docker stop $CONTAINER_NAME
+                docker rm $CONTAINER_NAME
+            fi
+
+            # 3. 새로운 이미지로 컨테이너 실행
+            #    .env 파일 대신 환경 변수를 직접 전달합니다.
+            #    이 값들은 GitHub Secrets에서 가져와서 여기에 직접 넣거나,
+            #    EC2 인스턴스 시작 시 Parameter Store/Secrets Manager에서 가져와
+            #    EC2 인스턴스 내의 환경 설정 파일(/etc/environment 등)에 저장해두고
+            #    docker run 시 참조하도록 할 수도 있습니다.
+            #    여기서는 GitHub Secrets를 직접 사용한다고 가정합니다. (보안상 더 좋은 방법은 EC2 메타데이터, IAM 역할 활용)
+            echo "새로운 이미지로 $CONTAINER_NAME 컨테이너를 시작합니다."
+            docker run -d \
+              -p 3000:3000 \
+              -e "OPENWEATHERMAP_API_KEY=${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }}" \
+              -e "Maps_API_KEY=${{ secrets.Maps_API_KEY_SECRET }}" \
+              -e "DB_HOST=${{ secrets.DB_HOST }}" \
+              -e "DB_USER=${{ secrets.DB_USER }}" \
+              -e "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" \
+              -e "DB_NAME=${{ secrets.DB_NAME }}" \
+              -e "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" \
+              --restart always \
+              --name $CONTAINER_NAME \
+              $IMAGE_URI
+
+            # (선택 사항) 오래된 Docker 이미지 정리
+            docker image prune -af || true 
+
+            echo "✅ EC2 배포 완료!"

@@ -10,9 +10,10 @@ jobs:
     name: Build and Push to ECR
     runs-on: ubuntu-latest
     outputs:
-      # ✨ login-ecr 단계의 registry 출력을 직접 사용하고, 나머지는 고정값 또는 job 레벨 env로 관리
-      ecr_registry_output: ${{ steps.login-ecr.outputs.registry }} 
-      image_tag_output: ${{ github.sha }} # 태그만 전달
+      # ✨ 명시적으로 각 부분을 다음 작업에 전달하도록 정의 ✨
+      ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      ECR_REPOSITORY: my-node-app # ✨ 메이슨님의 실제 ECR 리포지토리 이름
+      IMAGE_TAG: ${{ github.sha }}
 
     steps:
       - name: 🛎️ Checkout code
@@ -26,10 +27,11 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }} # ECR 리포지토리가 있는 주 리전
 
       - name: 🏷️ Login to Amazon ECR
-        id: login-ecr # outputs.registry 를 사용하기 위해 id 부여
+        id: login-ecr # 이 단계의 출력을 사용하기 위해 id 부여
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: 🏗️ Build, tag, and push image to Amazon ECR
+        # 이 단계에서는 더 이상 GITHUB_OUTPUT을 사용할 필요가 없습니다. (job outputs으로 전달)
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: my-node-app # ✨ 메이슨님의 실제 ECR 리포지토리 이름
@@ -42,19 +44,25 @@ jobs:
   deploy-to-ec2-seoul:
     name: Deploy to EC2 (Seoul)
     runs-on: ubuntu-latest
-    needs: build-and-push-to-ecr
-    env: # ✨ 작업 레벨 환경 변수로 ECR 정보 고정 (Secrets나 outputs을 안전하게 조합)
-        ECR_REGISTRY_URL: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com # 서울 리전 ECR
-        ECR_REPOSITORY_NAME: my-node-app # ✨ 실제 ECR 리포지토리 이름
-        IMAGE_TAG_FROM_BUILD: ${{ needs.build-and-push-to-ecr.outputs.image_tag_output }}
-
+    needs: build-and-push-to-ecr # build-and-push-to-ecr 작업의 성공 및 outputs 필요
+    
     steps:
-      - name: 🐞 Debug Seoul Secrets and Variables
+      # EC2 인스턴스에 ECR 접근 IAM 역할이 연결되어 있다면, 이 AWS 자격 증명 단계는
+      # EC2 내부에서 다른 AWS CLI 명령을 실행할 때만 필요합니다.
+      # ECR 로그인 자체는 IAM 역할로 처리될 수 있습니다.
+      # - name: ⚙️ Configure AWS credentials 
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     aws-region: ap-northeast-2 # 서울 리전
+
+      - name: 🐞 Debug Seoul Variables
         run: |
           echo "Seoul EC2 Host: ${{ secrets.EC2_HOST_SEOUL }}"
-          echo "ECR Registry URL (env): $ECR_REGISTRY_URL"
-          echo "ECR Repository Name (env): $ECR_REPOSITORY_NAME"
-          echo "Image Tag from build job (env): $IMAGE_TAG_FROM_BUILD"
+          echo "ECR Registry from needs: ${{ needs.build-and-push-to-ecr.outputs.ECR_REGISTRY }}"
+          echo "ECR Repository from needs: ${{ needs.build-and-push-to-ecr.outputs.ECR_REPOSITORY }}"
+          echo "Image Tag from needs: ${{ needs.build-and-push-to-ecr.outputs.IMAGE_TAG }}"
       
       - name: 🚚 Deploy to Seoul EC2 instance
         uses: appleboy/ssh-action@v1.0.3
@@ -63,17 +71,29 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # EC2 인스턴스에 ECR 접근 IAM 역할이 연결되어 있다면, 별도의 ECR 로그인 불필요.
-            # 만약 IAM 역할이 없다면 아래 로그인 필요 (secrets.AWS_ACCESS_KEY_ID 등을 SSH 통해 전달은 보안상 비권장)
-            # 이 스크립트는 EC2 인스턴스 자체에 AWS CLI가 구성되어 있고, ECR 접근 권한이 있는 IAM 역할이 연결되었다고 가정합니다.
+            # EC2 인스턴스의 IAM 역할이 ECR 접근 권한을 가지고 있다고 가정합니다.
+            # 따라서 별도의 `docker login` 명령은 생략합니다.
             
-            IMAGE_URI="${ECR_REGISTRY_URL}/${ECR_REPOSITORY_NAME}:${IMAGE_TAG_FROM_BUILD}"
+            # ✨ 이전 작업의 outputs에서 각 부분을 가져와 이미지 URI 재조립 ✨
+            ECR_REGISTRY_VAL="${{ needs.build-and-push-to-ecr.outputs.ECR_REGISTRY }}"
+            ECR_REPOSITORY_VAL="${{ needs.build-and-push-to-ecr.outputs.ECR_REPOSITORY }}"
+            IMAGE_TAG_VAL="${{ needs.build-and-push-to-ecr.outputs.IMAGE_TAG }}"
+            
+            # 유효성 검사: 필요한 값들이 비어있지 않은지 확인
+            if [ -z "$ECR_REGISTRY_VAL" ] || [ -z "$ECR_REPOSITORY_VAL" ] || [ -z "$IMAGE_TAG_VAL" ]; then
+              echo "오류: ECR 이미지 정보를 제대로 전달받지 못했습니다."
+              echo "ECR_REGISTRY_VAL: $ECR_REGISTRY_VAL"
+              echo "ECR_REPOSITORY_VAL: $ECR_REPOSITORY_VAL"
+              echo "IMAGE_TAG_VAL: $IMAGE_TAG_VAL"
+              exit 1
+            fi
+            
+            IMAGE_URI="$ECR_REGISTRY_VAL/$ECR_REPOSITORY_VAL:$IMAGE_TAG_VAL"
             CONTAINER_NAME="my-running-app-seoul"
 
             echo "배포할 새로운 이미지 URI: $IMAGE_URI"
             
             echo "1. 최신 이미지 pull..."
-            # EC2 인스턴스의 IAM 역할이 ECR 접근 권한을 가지고 있어야 함
             docker pull $IMAGE_URI
 
             echo "2. 기존 컨테이너 중지 및 삭제..."
@@ -98,23 +118,22 @@ jobs:
             
             docker image prune -af || true
             echo "✅ 서울 EC2 배포 완료!"
-            docker ps -f name=$CONTAINER_NAME # 실행된 컨테이너 정보 출력
+            docker ps -f name=$CONTAINER_NAME
 
+  # deploy-to-ec2-tokyo 작업도 위와 동일한 방식으로 수정 (리전 및 Secret 이름만 다름)
   deploy-to-ec2-tokyo:
     name: Deploy to EC2 (Tokyo)
     runs-on: ubuntu-latest
     needs: build-and-push-to-ecr
-    env: # ✨ 작업 레벨 환경 변수로 ECR 정보 고정
-        ECR_REGISTRY_URL: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-1.amazonaws.com # 도쿄 리전 ECR
-        ECR_REPOSITORY_NAME: my-node-app # ✨ 실제 ECR 리포지토리 이름
-        IMAGE_TAG_FROM_BUILD: ${{ needs.build-and-push-to-ecr.outputs.image_tag_output }}
     steps:
-      - name: 🐞 Debug Tokyo Secrets and Variables
+      # - name: ⚙️ Configure AWS credentials ... (필요시)
+
+      - name: 🐞 Debug Tokyo Variables
         run: |
           echo "Tokyo EC2 Host: ${{ secrets.EC2_HOST_TOKYO }}"
-          echo "ECR Registry URL (env): $ECR_REGISTRY_URL"
-          echo "ECR Repository Name (env): $ECR_REPOSITORY_NAME"
-          echo "Image Tag from build job (env): $IMAGE_TAG_FROM_BUILD"
+          echo "ECR Registry from needs: ${{ needs.build-and-push-to-ecr.outputs.ECR_REGISTRY }}"
+          echo "ECR Repository from needs: ${{ needs.build-and-push-to-ecr.outputs.ECR_REPOSITORY }}"
+          echo "Image Tag from needs: ${{ needs.build-and-push-to-ecr.outputs.IMAGE_TAG }}"
 
       - name: 🚚 Deploy to Tokyo EC2 instance
         uses: appleboy/ssh-action@v1.0.3
@@ -123,7 +142,16 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            IMAGE_URI="${ECR_REGISTRY_URL}/${ECR_REPOSITORY_NAME}:${IMAGE_TAG_FROM_BUILD}"
+            ECR_REGISTRY_VAL="${{ needs.build-and-push-to-ecr.outputs.ECR_REGISTRY }}"
+            ECR_REPOSITORY_VAL="${{ needs.build-and-push-to-ecr.outputs.ECR_REPOSITORY }}"
+            IMAGE_TAG_VAL="${{ needs.build-and-push-to-ecr.outputs.IMAGE_TAG }}"
+
+            if [ -z "$ECR_REGISTRY_VAL" ] || [ -z "$ECR_REPOSITORY_VAL" ] || [ -z "$IMAGE_TAG_VAL" ]; then
+              echo "오류: ECR 이미지 정보를 제대로 전달받지 못했습니다."
+              exit 1
+            fi
+
+            IMAGE_URI="$ECR_REGISTRY_VAL/$ECR_REPOSITORY_VAL:$IMAGE_TAG_VAL"
             CONTAINER_NAME="my-running-app-tokyo"
 
             echo "배포할 새로운 이미지 URI: $IMAGE_URI"

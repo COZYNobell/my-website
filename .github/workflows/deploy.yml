@@ -10,9 +10,8 @@ jobs:
     name: Build and Push to ECR
     runs-on: ubuntu-latest
     outputs:
-      # ✨ 출력 변수 이름 변경 (GitHub Actions의 자동 마스킹 회피 시도) ✨
-      built_ecr_registry: ${{ steps.login-ecr.outputs.registry }}
-      built_ecr_repository: my-node-app # ECR 리포지토리 이름은 여기서 고정
+      # ✨ ECR 레지스트리 주소는 다음 작업에서 직접 구성하므로, 여기서는 리포지토리 이름과 태그만 전달합니다.
+      built_ecr_repository: my-node-app # ✨ 메이슨님의 실제 ECR 리포지토리 이름
       built_image_tag: ${{ github.sha }}
 
     steps:
@@ -24,21 +23,27 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }} # ECR 리포지토리가 있는 주 리전
+          aws-region: ${{ secrets.AWS_REGION }} # ECR 리포지토리가 있는 주 리전 (예: ap-northeast-2)
 
       - name: 🏷️ Login to Amazon ECR
-        id: login-ecr
+        id: login-ecr # 이 단계의 출력이 필요 없어졌지만, 로그인을 위해 유지
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: 🏗️ Build, tag, and push image to Amazon ECR
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: my-node-app # ✨ 실제 ECR 리포지토리 이름
+          # ECR 레지스트리 주소를 여기서도 직접 구성하여 사용
+          ECR_REGISTRY_URL: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          ECR_REPOSITORY_NAME: my-node-app # ✨ 메이슨님의 실제 ECR 리포지토리 이름
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          echo "Image pushed to ECR: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          echo "Building image for ECR Registry: $ECR_REGISTRY_URL"
+          echo "Target Repository: $ECR_REPOSITORY_NAME"
+          echo "Image Tag: $IMAGE_TAG"
+          
+          docker build -t $ECR_REGISTRY_URL/$ECR_REPOSITORY_NAME:$IMAGE_TAG .
+          docker push $ECR_REGISTRY_URL/$ECR_REPOSITORY_NAME:$IMAGE_TAG
+          
+          echo "Image pushed to ECR: $ECR_REGISTRY_URL/$ECR_REPOSITORY_NAME:$IMAGE_TAG"
 
   deploy-to-ec2-seoul:
     name: Deploy to EC2 (Seoul)
@@ -49,7 +54,7 @@ jobs:
       - name: 🐞 Debug Seoul Variables
         run: |
           echo "Seoul EC2 Host: ${{ secrets.EC2_HOST_SEOUL }}"
-          echo "ECR Registry from needs: [${{ needs.build-and-push-to-ecr.outputs.built_ecr_registry }}]"
+          echo "AWS Account ID for ECR: ${{ secrets.AWS_ACCOUNT_ID }}" # Secret 전달 확인
           echo "ECR Repository from needs: [${{ needs.build-and-push-to-ecr.outputs.built_ecr_repository }}]"
           echo "Image Tag from needs: [${{ needs.build-and-push-to-ecr.outputs.built_image_tag }}]"
       
@@ -60,30 +65,38 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            ECR_REGISTRY_VAL="${{ needs.build-and-push-to-ecr.outputs.built_ecr_registry }}"
+            # EC2 인스턴스의 IAM 역할이 ECR 접근 권한을 가지고 있다고 가정
+            
+            # ✨ ECR 레지스트리 주소 직접 구성 (서울 리전용) ✨
+            ECR_REGISTRY_URL_SEOUL="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com"
             ECR_REPOSITORY_VAL="${{ needs.build-and-push-to-ecr.outputs.built_ecr_repository }}"
             IMAGE_TAG_VAL="${{ needs.build-and-push-to-ecr.outputs.built_image_tag }}"
             
-            if [ -z "$ECR_REGISTRY_VAL" ] || [ -z "$ECR_REPOSITORY_VAL" ] || [ -z "$IMAGE_TAG_VAL" ]; then
-              echo "오류: ECR 이미지 정보를 제대로 전달받지 못했습니다."
-              echo "ECR_REGISTRY_VAL: [$ECR_REGISTRY_VAL]"
-              echo "ECR_REPOSITORY_VAL: [$ECR_REPOSITORY_VAL]"
-              echo "IMAGE_TAG_VAL: [$IMAGE_TAG_VAL]"
+            # 유효성 검사
+            if [ -z "$ECR_REGISTRY_URL_SEOUL" ] || [ -z "$ECR_REPOSITORY_VAL" ] || [ -z "$IMAGE_TAG_VAL" ] || [ "${{ secrets.AWS_ACCOUNT_ID }}" == "" ]; then
+              echo "오류: ECR 이미지 정보를 구성하는 데 필요한 값이 누락되었습니다 (서울)."
+              echo "ECR_REGISTRY_URL_SEOUL (구성됨): [$ECR_REGISTRY_URL_SEOUL]"
+              echo "ECR_REPOSITORY_VAL (from needs): [$ECR_REPOSITORY_VAL]"
+              echo "IMAGE_TAG_VAL (from needs): [$IMAGE_TAG_VAL]"
+              echo "AWS_ACCOUNT_ID Secret (존재 여부): ${{ secrets.AWS_ACCOUNT_ID != '' }}"
               exit 1
             fi
             
-            IMAGE_URI="$ECR_REGISTRY_VAL/$ECR_REPOSITORY_VAL:$IMAGE_TAG_VAL"
+            IMAGE_URI="$ECR_REGISTRY_URL_SEOUL/$ECR_REPOSITORY_VAL:$IMAGE_TAG_VAL"
             CONTAINER_NAME="my-running-app-seoul"
 
-            echo "배포할 새로운 이미지 URI: $IMAGE_URI"
+            echo "배포할 새로운 이미지 URI (서울): $IMAGE_URI"
+            
+            echo "1. 최신 이미지 pull (서울)..."
             docker pull $IMAGE_URI
-            if [ $? -ne 0 ]; then echo "docker pull 실패!"; exit 1; fi # docker pull 실패 시 중단
+            if [ $? -ne 0 ]; then echo "docker pull 실패! (서울)"; exit 1; fi
 
+            echo "2. 기존 컨테이너 중지 및 삭제 (서울)..."
             if [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
                 docker stop $CONTAINER_NAME && docker rm $CONTAINER_NAME
             fi
 
-            echo "서울 EC2에 새 컨테이너 시작..."
+            echo "3. 서울 EC2에 새 컨테이너 시작..."
             docker run -d \
               -p 3000:3000 \
               -e "OPENWEATHERMAP_API_KEY=${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }}" \
@@ -96,7 +109,7 @@ jobs:
               --restart always \
               --name $CONTAINER_NAME \
               $IMAGE_URI
-            if [ $? -ne 0 ]; then echo "docker run 실패!"; exit 1; fi # docker run 실패 시 중단
+            if [ $? -ne 0 ]; then echo "docker run 실패! (서울)"; exit 1; fi
             
             docker image prune -af || true
             echo "✅ 서울 EC2 배포 완료!"
@@ -110,7 +123,7 @@ jobs:
       - name: 🐞 Debug Tokyo Variables
         run: |
           echo "Tokyo EC2 Host: ${{ secrets.EC2_HOST_TOKYO }}"
-          echo "ECR Registry from needs: [${{ needs.build-and-push-to-ecr.outputs.built_ecr_registry }}]"
+          echo "AWS Account ID for ECR: ${{ secrets.AWS_ACCOUNT_ID }}"
           echo "ECR Repository from needs: [${{ needs.build-and-push-to-ecr.outputs.built_ecr_repository }}]"
           echo "Image Tag from needs: [${{ needs.build-and-push-to-ecr.outputs.built_image_tag }}]"
 
@@ -121,24 +134,23 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            ECR_REGISTRY_VAL="${{ needs.build-and-push-to-ecr.outputs.built_ecr_registry }}"
+            # ✨ ECR 레지스트리 주소 직접 구성 (도쿄 리전용) ✨
+            ECR_REGISTRY_URL_TOKYO="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-1.amazonaws.com"
             ECR_REPOSITORY_VAL="${{ needs.build-and-push-to-ecr.outputs.built_ecr_repository }}"
             IMAGE_TAG_VAL="${{ needs.build-and-push-to-ecr.outputs.built_image_tag }}"
 
-            if [ -z "$ECR_REGISTRY_VAL" ] || [ -z "$ECR_REPOSITORY_VAL" ] || [ -z "$IMAGE_TAG_VAL" ]; then
-              echo "오류: ECR 이미지 정보를 제대로 전달받지 못했습니다."
-              echo "ECR_REGISTRY_VAL: [$ECR_REGISTRY_VAL]"
-              echo "ECR_REPOSITORY_VAL: [$ECR_REPOSITORY_VAL]"
-              echo "IMAGE_TAG_VAL: [$IMAGE_TAG_VAL]"
+            if [ -z "$ECR_REGISTRY_URL_TOKYO" ] || [ -z "$ECR_REPOSITORY_VAL" ] || [ -z "$IMAGE_TAG_VAL" ] || [ "${{ secrets.AWS_ACCOUNT_ID }}" == "" ]; then
+              echo "오류: ECR 이미지 정보를 구성하는 데 필요한 값이 누락되었습니다 (도쿄)."
+              # ... (디버깅 echo 문들)
               exit 1
             fi
 
-            IMAGE_URI="$ECR_REGISTRY_VAL/$ECR_REPOSITORY_VAL:$IMAGE_TAG_VAL"
+            IMAGE_URI="$ECR_REGISTRY_URL_TOKYO/$ECR_REPOSITORY_VAL:$IMAGE_TAG_VAL"
             CONTAINER_NAME="my-running-app-tokyo"
-
-            echo "배포할 새로운 이미지 URI: $IMAGE_URI"
+            
+            echo "배포할 새로운 이미지 URI (도쿄): $IMAGE_URI"
             docker pull $IMAGE_URI
-            if [ $? -ne 0 ]; then echo "docker pull 실패!"; exit 1; fi
+            if [ $? -ne 0 ]; then echo "docker pull 실패! (도쿄)"; exit 1; fi
 
             if [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
                 docker stop $CONTAINER_NAME && docker rm $CONTAINER_NAME
@@ -156,7 +168,7 @@ jobs:
               --restart always \
               --name $CONTAINER_NAME \
               $IMAGE_URI
-            if [ $? -ne 0 ]; then echo "docker run 실패!"; exit 1; fi
+            if [ $? -ne 0 ]; then echo "docker run 실패! (도쿄)"; exit 1; fi
             
             docker image prune -af || true
             echo "✅ 도쿄 EC2 배포 완료!"

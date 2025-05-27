@@ -10,9 +10,9 @@ jobs:
     name: Build and Push to ECR
     runs-on: ubuntu-latest
     outputs:
-      ecr_registry: ${{ steps.login-ecr.outputs.registry }}
-      ecr_repository: my-node-app # ✨ 실제 ECR 리포지토리 이름
-      image_tag: ${{ github.sha }}
+      # ✨ login-ecr 단계의 registry 출력을 직접 사용하고, 나머지는 고정값 또는 job 레벨 env로 관리
+      ecr_registry_output: ${{ steps.login-ecr.outputs.registry }} 
+      image_tag_output: ${{ github.sha }} # 태그만 전달
 
     steps:
       - name: 🛎️ Checkout code
@@ -26,14 +26,13 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }} # ECR 리포지토리가 있는 주 리전
 
       - name: 🏷️ Login to Amazon ECR
-        id: login-ecr
+        id: login-ecr # outputs.registry 를 사용하기 위해 id 부여
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: 🏗️ Build, tag, and push image to Amazon ECR
-        id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: my-node-app # ✨ 실제 ECR 리포지토리 이름
+          ECR_REPOSITORY: my-node-app # ✨ 메이슨님의 실제 ECR 리포지토리 이름
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
@@ -44,25 +43,19 @@ jobs:
     name: Deploy to EC2 (Seoul)
     runs-on: ubuntu-latest
     needs: build-and-push-to-ecr
+    env: # ✨ 작업 레벨 환경 변수로 ECR 정보 고정 (Secrets나 outputs을 안전하게 조합)
+        ECR_REGISTRY_URL: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com # 서울 리전 ECR
+        ECR_REPOSITORY_NAME: my-node-app # ✨ 실제 ECR 리포지토리 이름
+        IMAGE_TAG_FROM_BUILD: ${{ needs.build-and-push-to-ecr.outputs.image_tag_output }}
+
     steps:
-      # ✨ AWS 자격 증명 설정 단계는 EC2가 IAM 역할을 통해 ECR에 접근하므로 여기서는 더 이상 불필요할 수 있습니다.
-      # ✨ 다만, SSH 액션 외에 다른 AWS CLI 명령을 EC2 외부에서 실행해야 한다면 남겨둘 수 있습니다.
-      # - name: ⚙️ Configure AWS credentials 
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      #     aws-region: ap-northeast-2 # 서울 리전
-
-      - name: 🐞 Debug Seoul Secrets (Remove after testing!)
-        if: ${{ always() }} # 이전 단계 실패 여부와 관계없이 항상 실행 (디버깅용)
+      - name: 🐞 Debug Seoul Secrets and Variables
         run: |
-          echo "Attempting to deploy to Seoul..."
-          echo "EC2_HOST_SEOUL Secret Value is: ${{ secrets.EC2_HOST_SEOUL }}"
-          echo "ECR Registry from previous job: ${{ needs.build-and-push-to-ecr.outputs.ecr_registry }}"
-          echo "ECR Repository from previous job: ${{ needs.build-and-push-to-ecr.outputs.ecr_repository }}"
-          echo "Image Tag from previous job: ${{ needs.build-and-push-to-ecr.outputs.image_tag }}"
-
+          echo "Seoul EC2 Host: ${{ secrets.EC2_HOST_SEOUL }}"
+          echo "ECR Registry URL (env): $ECR_REGISTRY_URL"
+          echo "ECR Repository Name (env): $ECR_REPOSITORY_NAME"
+          echo "Image Tag from build job (env): $IMAGE_TAG_FROM_BUILD"
+      
       - name: 🚚 Deploy to Seoul EC2 instance
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -70,31 +63,26 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # ✨ EC2 인스턴스에 ECR 접근 IAM 역할이 부여되었으므로, 별도의 ECR 로그인 명령이 필요 없을 수 있습니다.
-            # ✨ 만약 필요하다면 이전처럼 aws ecr get-login-password ... 를 사용합니다.
-            # echo "ECR 로그인 (서울) - IAM 역할 사용 시 이 부분은 생략 가능"
-            # aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
-
-            ECR_REGISTRY_VAL="${{ needs.build-and-push-to-ecr.outputs.ecr_registry }}"
-            ECR_REPOSITORY_VAL="${{ needs.build-and-push-to-ecr.outputs.ecr_repository }}"
-            IMAGE_TAG_VAL="${{ needs.build-and-push-to-ecr.outputs.image_tag }}"
-            IMAGE_URI="$ECR_REGISTRY_VAL/$ECR_REPOSITORY_VAL:$IMAGE_TAG_VAL"
+            # EC2 인스턴스에 ECR 접근 IAM 역할이 연결되어 있다면, 별도의 ECR 로그인 불필요.
+            # 만약 IAM 역할이 없다면 아래 로그인 필요 (secrets.AWS_ACCESS_KEY_ID 등을 SSH 통해 전달은 보안상 비권장)
+            # 이 스크립트는 EC2 인스턴스 자체에 AWS CLI가 구성되어 있고, ECR 접근 권한이 있는 IAM 역할이 연결되었다고 가정합니다.
             
+            IMAGE_URI="${ECR_REGISTRY_URL}/${ECR_REPOSITORY_NAME}:${IMAGE_TAG_FROM_BUILD}"
             CONTAINER_NAME="my-running-app-seoul"
 
             echo "배포할 새로운 이미지 URI: $IMAGE_URI"
-            # docker pull 시 IAM 역할이 ECR 접근 권한을 제공해야 함
+            
+            echo "1. 최신 이미지 pull..."
+            # EC2 인스턴스의 IAM 역할이 ECR 접근 권한을 가지고 있어야 함
             docker pull $IMAGE_URI
 
+            echo "2. 기존 컨테이너 중지 및 삭제..."
             if [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
-                echo "기존 $CONTAINER_NAME 컨테이너를 중지하고 삭제합니다."
                 docker stop $CONTAINER_NAME
                 docker rm $CONTAINER_NAME
-            else
-                echo "실행 중인 $CONTAINER_NAME 컨테이너가 없습니다."
             fi
 
-            echo "서울 EC2에 새 컨테이너 시작..."
+            echo "3. 서울 EC2에 새 컨테이너 시작..."
             docker run -d \
               -p 3000:3000 \
               -e "OPENWEATHERMAP_API_KEY=${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }}" \
@@ -107,29 +95,26 @@ jobs:
               --restart always \
               --name $CONTAINER_NAME \
               $IMAGE_URI
+            
             docker image prune -af || true
             echo "✅ 서울 EC2 배포 완료!"
+            docker ps -f name=$CONTAINER_NAME # 실행된 컨테이너 정보 출력
 
   deploy-to-ec2-tokyo:
     name: Deploy to EC2 (Tokyo)
     runs-on: ubuntu-latest
     needs: build-and-push-to-ecr
+    env: # ✨ 작업 레벨 환경 변수로 ECR 정보 고정
+        ECR_REGISTRY_URL: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-1.amazonaws.com # 도쿄 리전 ECR
+        ECR_REPOSITORY_NAME: my-node-app # ✨ 실제 ECR 리포지토리 이름
+        IMAGE_TAG_FROM_BUILD: ${{ needs.build-and-push-to-ecr.outputs.image_tag_output }}
     steps:
-      # - name: ⚙️ Configure AWS credentials
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      #     aws-region: ap-northeast-1 # 도쿄 리전
-
-      - name: 🐞 Debug Tokyo Secrets (Remove after testing!)
-        if: ${{ always() }}
+      - name: 🐞 Debug Tokyo Secrets and Variables
         run: |
-          echo "Attempting to deploy to Tokyo..."
-          echo "EC2_HOST_TOKYO Secret Value is: ${{ secrets.EC2_HOST_TOKYO }}"
-          echo "ECR Registry from previous job: ${{ needs.build-and-push-to-ecr.outputs.ecr_registry }}"
-          echo "ECR Repository from previous job: ${{ needs.build-and-push-to-ecr.outputs.ecr_repository }}"
-          echo "Image Tag from previous job: ${{ needs.build-and-push-to-ecr.outputs.image_tag }}"
+          echo "Tokyo EC2 Host: ${{ secrets.EC2_HOST_TOKYO }}"
+          echo "ECR Registry URL (env): $ECR_REGISTRY_URL"
+          echo "ECR Repository Name (env): $ECR_REPOSITORY_NAME"
+          echo "Image Tag from build job (env): $IMAGE_TAG_FROM_BUILD"
 
       - name: 🚚 Deploy to Tokyo EC2 instance
         uses: appleboy/ssh-action@v1.0.3
@@ -138,25 +123,14 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # echo "ECR 로그인 (도쿄) - IAM 역할 사용 시 이 부분은 생략 가능"
-            # aws ecr get-login-password --region ap-northeast-1 | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-1.amazonaws.com
-
-            ECR_REGISTRY_VAL="${{ needs.build-and-push-to-ecr.outputs.ecr_registry }}"
-            ECR_REPOSITORY_VAL="${{ needs.build-and-push-to-ecr.outputs.ecr_repository }}"
-            IMAGE_TAG_VAL="${{ needs.build-and-push-to-ecr.outputs.image_tag }}"
-            IMAGE_URI="$ECR_REGISTRY_VAL/$ECR_REPOSITORY_VAL:$IMAGE_TAG_VAL"
-            
+            IMAGE_URI="${ECR_REGISTRY_URL}/${ECR_REPOSITORY_NAME}:${IMAGE_TAG_FROM_BUILD}"
             CONTAINER_NAME="my-running-app-tokyo"
 
             echo "배포할 새로운 이미지 URI: $IMAGE_URI"
             docker pull $IMAGE_URI
-
             if [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
-                echo "기존 $CONTAINER_NAME 컨테이너를 중지하고 삭제합니다."
                 docker stop $CONTAINER_NAME
                 docker rm $CONTAINER_NAME
-            else
-                echo "실행 중인 $CONTAINER_NAME 컨테이너가 없습니다."
             fi
             echo "도쿄 EC2에 새 컨테이너 시작..."
             docker run -d \
@@ -173,3 +147,4 @@ jobs:
               $IMAGE_URI
             docker image prune -af || true
             echo "✅ 도쿄 EC2 배포 완료!"
+            docker ps -f name=$CONTAINER_NAME

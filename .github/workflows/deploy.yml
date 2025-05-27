@@ -1,4 +1,4 @@
-name: Build Docker Image and Deploy to Multi-Region EC2
+name: Build and Deploy Docker Image to EC2 (via ECR)
 
 on:
   push:
@@ -34,19 +34,10 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           echo "image_uri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-  # 서울 리전에 배포하는 작업
   deploy-to-ec2-seoul:
     name: Deploy to EC2 (Seoul)
     runs-on: ubuntu-latest
-    needs: build-and-push-to-ecr # 이미지 빌드 및 푸시 작업이 성공해야 실행
-    
-    # ✨ 중요: 서울 리전용 환경 변수(DB 접속 정보 등)를 어떻게 전달할지 결정 필요
-    # 방법 1: GitHub Secrets에 리전별로 Secrets를 만듦 (예: DB_HOST_SEOUL, DB_HOST_TOKYO)
-    # 방법 2: 애플리케이션이 시작될 때 EC2 인스턴스 메타데이터나 태그를 읽어 리전을 파악하고,
-    #         Parameter Store 등에서 해당 리전에 맞는 설정을 가져오도록 앱 수정 (더 고급)
-    # 여기서는 방법 1을 가정하고, 워크플로우에서 Secrets를 전달합니다.
-    # 또는, 모든 리전에서 동일한 Parameter Store 경로를 사용하고, EC2의 IAM 역할로 접근하게 할 수도 있습니다.
-
+    needs: build-and-push-to-ecr
     steps:
       - name: ⚙️ Configure AWS credentials (for ECR login on EC2 if needed)
         uses: aws-actions/configure-aws-credentials@v4
@@ -55,10 +46,20 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-northeast-2 # 서울 리전
 
+      # ✨✨✨ NEW: 디버깅을 위한 Secret 값 출력 (서울) - 테스트 후 반드시 제거! ✨✨✨
+      - name: 🐞 Debug Seoul EC2 Host Secret
+        run: |
+          echo "Attempting to deploy to Seoul..."
+          echo "EC2_HOST_SEOUL Secret Value is: ${{ secrets.EC2_HOST_SEOUL }}"
+          echo "EC2_USERNAME Secret Value is: ${{ secrets.EC2_USERNAME }}"
+          # EC2_SSH_KEY는 너무 길고 민감하므로 직접 출력하지 않고 존재 여부만 확인합니다.
+          echo "EC2_SSH_KEY Secret Exists: ${{ secrets.EC2_SSH_KEY != '' }}"
+      # ✨✨✨ 디버깅 단계 끝 ✨✨✨
+
       - name: 🚚 Deploy to Seoul EC2 instance
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.EC2_HOST_SEOUL }} # ✨ 서울 EC2 호스트 Secret
+          host: ${{ secrets.EC2_HOST_SEOUL }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
@@ -66,23 +67,25 @@ jobs:
             aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
 
             IMAGE_URI="${{ needs.build-and-push-to-ecr.outputs.image_uri }}"
-            CONTAINER_NAME="my-running-app-seoul" # 컨테이너 이름에 리전 구분자 추가
+            CONTAINER_NAME="my-running-app-seoul"
 
             echo "배포할 이미지 URI: $IMAGE_URI"
             docker pull $IMAGE_URI
             if [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
                 docker stop $CONTAINER_NAME
                 docker rm $CONTAINER_NAME
+            else
+                echo "실행 중인 $CONTAINER_NAME 컨테이너가 없습니다."
             fi
             echo "서울 EC2에 새 컨테이너 시작..."
             docker run -d \
               -p 3000:3000 \
               -e "OPENWEATHERMAP_API_KEY=${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }}" \
-              -e "Maps_API_KEY=${{ secrets.Maps_API_KEY_SECRET }}" \
-              -e "DB_HOST=${{ secrets.DB_HOST_SEOUL }}"           # ✨ 서울 RDS 호스트 Secret
-              -e "DB_USER=${{ secrets.DB_USER_SEOUL }}"           # ✨ 서울 RDS 사용자 Secret
-              -e "DB_PASSWORD=${{ secrets.DB_PASSWORD_SEOUL }}"   # ✨ 서울 RDS 비밀번호 Secret
-              -e "DB_NAME=${{ secrets.DB_NAME_SEOUL }}"           # ✨ 서울 RDS DB 이름 Secret
+              -e "Maps_API_KEY=${{ secrets.MAPS_API_KEY_SECRET }}" \
+              -e "DB_HOST=${{ secrets.DB_HOST_SEOUL }}" \
+              -e "DB_USER=${{ secrets.DB_USER_SEOUL }}" \
+              -e "DB_PASSWORD=${{ secrets.DB_PASSWORD_SEOUL }}" \
+              -e "DB_NAME=${{ secrets.DB_NAME_SEOUL }}" \
               -e "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" \
               --restart always \
               --name $CONTAINER_NAME \
@@ -90,12 +93,10 @@ jobs:
             docker image prune -af || true
             echo "✅ 서울 EC2 배포 완료!"
 
-  # 도쿄 리전에 배포하는 작업
   deploy-to-ec2-tokyo:
     name: Deploy to EC2 (Tokyo)
     runs-on: ubuntu-latest
     needs: build-and-push-to-ecr
-
     steps:
       - name: ⚙️ Configure AWS credentials (for ECR login on EC2 if needed)
         uses: aws-actions/configure-aws-credentials@v4
@@ -104,10 +105,19 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-northeast-1 # 도쿄 리전
 
+      # ✨✨✨ NEW: 디버깅을 위한 Secret 값 출력 (도쿄) - 테스트 후 반드시 제거! ✨✨✨
+      - name: 🐞 Debug Tokyo EC2 Host Secret
+        run: |
+          echo "Attempting to deploy to Tokyo..."
+          echo "EC2_HOST_TOKYO Secret Value is: ${{ secrets.EC2_HOST_TOKYO }}"
+          echo "EC2_USERNAME Secret Value is: ${{ secrets.EC2_USERNAME }}"
+          echo "EC2_SSH_KEY Secret Exists: ${{ secrets.EC2_SSH_KEY != '' }}"
+      # ✨✨✨ 디버깅 단계 끝 ✨✨✨
+
       - name: 🚚 Deploy to Tokyo EC2 instance
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.EC2_HOST_TOKYO }} # ✨ 도쿄 EC2 호스트 Secret
+          host: ${{ secrets.EC2_HOST_TOKYO }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
@@ -115,23 +125,25 @@ jobs:
             aws ecr get-login-password --region ap-northeast-1 | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-1.amazonaws.com
 
             IMAGE_URI="${{ needs.build-and-push-to-ecr.outputs.image_uri }}"
-            CONTAINER_NAME="my-running-app-tokyo" # 컨테이너 이름에 리전 구분자 추가
+            CONTAINER_NAME="my-running-app-tokyo"
 
             echo "배포할 이미지 URI: $IMAGE_URI"
             docker pull $IMAGE_URI
             if [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
                 docker stop $CONTAINER_NAME
                 docker rm $CONTAINER_NAME
+            else
+                echo "실행 중인 $CONTAINER_NAME 컨테이너가 없습니다."
             fi
             echo "도쿄 EC2에 새 컨테이너 시작..."
             docker run -d \
               -p 3000:3000 \
               -e "OPENWEATHERMAP_API_KEY=${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }}" \
-              -e "Maps_API_KEY=${{ secrets.Maps_API_KEY_SECRET }}" \
-              -e "DB_HOST=${{ secrets.DB_HOST_TOKYO }}"           # ✨ 도쿄 RDS 호스트 Secret
-              -e "DB_USER=${{ secrets.DB_USER_TOKYO }}"           # ✨ 도쿄 RDS 사용자 Secret
-              -e "DB_PASSWORD=${{ secrets.DB_PASSWORD_TOKYO }}"   # ✨ 도쿄 RDS 비밀번호 Secret
-              -e "DB_NAME=${{ secrets.DB_NAME_TOKYO }}"           # ✨ 도쿄 RDS DB 이름 Secret
+              -e "Maps_API_KEY=${{ secrets.MAPS_API_KEY_SECRET }}" \
+              -e "DB_HOST=${{ secrets.DB_HOST_TOKYO }}" \
+              -e "DB_USER=${{ secrets.DB_USER_TOKYO }}" \
+              -e "DB_PASSWORD=${{ secrets.DB_PASSWORD_TOKYO }}" \
+              -e "DB_NAME=${{ secrets.DB_NAME_TOKYO }}" \
               -e "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" \
               --restart always \
               --name $CONTAINER_NAME \

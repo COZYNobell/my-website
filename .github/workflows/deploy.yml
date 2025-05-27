@@ -10,7 +10,7 @@ jobs:
     name: Build and Push to ECR
     runs-on: ubuntu-latest
     outputs:
-      # ✨ ECR 레지스트리 주소는 다음 작업에서 직접 구성하므로, 여기서는 리포지토리 이름과 태그만 전달합니다.
+      # ECR 리포지토리 이름과 이미지 태그만 다음 작업으로 전달
       built_ecr_repository: my-node-app # ✨ 메이슨님의 실제 ECR 리포지토리 이름
       built_image_tag: ${{ github.sha }}
 
@@ -26,13 +26,12 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }} # ECR 리포지토리가 있는 주 리전 (예: ap-northeast-2)
 
       - name: 🏷️ Login to Amazon ECR
-        id: login-ecr # 이 단계의 출력이 필요 없어졌지만, 로그인을 위해 유지
+        id: login-ecr # 이 단계는 Runner에서 ECR로 푸시하기 위해 필요
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: 🏗️ Build, tag, and push image to Amazon ECR
         env:
-          # ECR 레지스트리 주소를 여기서도 직접 구성하여 사용
-          ECR_REGISTRY_URL: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          ECR_REGISTRY_URL: ${{ steps.login-ecr.outputs.registry }} # 로그인 단계에서 얻은 ECR 레지스트리 URI
           ECR_REPOSITORY_NAME: my-node-app # ✨ 메이슨님의 실제 ECR 리포지토리 이름
           IMAGE_TAG: ${{ github.sha }}
         run: |
@@ -48,13 +47,13 @@ jobs:
   deploy-to-ec2-seoul:
     name: Deploy to EC2 (Seoul)
     runs-on: ubuntu-latest
-    needs: build-and-push-to-ecr
+    needs: build-and-push-to-ecr # 이전 작업의 outputs 필요
     
     steps:
       - name: 🐞 Debug Seoul Variables
         run: |
           echo "Seoul EC2 Host: ${{ secrets.EC2_HOST_SEOUL }}"
-          echo "AWS Account ID for ECR: ${{ secrets.AWS_ACCOUNT_ID }}" # Secret 전달 확인
+          echo "AWS Account ID for ECR: ${{ secrets.AWS_ACCOUNT_ID }}"
           echo "ECR Repository from needs: [${{ needs.build-and-push-to-ecr.outputs.built_ecr_repository }}]"
           echo "Image Tag from needs: [${{ needs.build-and-push-to-ecr.outputs.built_image_tag }}]"
       
@@ -65,20 +64,15 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # EC2 인스턴스의 IAM 역할이 ECR 접근 권한을 가지고 있다고 가정
+            # EC2 인스턴스에 ECR 접근 IAM 역할이 연결되어 있으므로, 별도의 ECR 로그인 명령은 필요 없습니다.
             
-            # ✨ ECR 레지스트리 주소 직접 구성 (서울 리전용) ✨
-            ECR_REGISTRY_URL_SEOUL="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com"
+            # ECR 레지스트리 주소 직접 구성 (서울 리전용)
+            ECR_REGISTRY_URL_SEOUL="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com" # 서울 리전
             ECR_REPOSITORY_VAL="${{ needs.build-and-push-to-ecr.outputs.built_ecr_repository }}"
             IMAGE_TAG_VAL="${{ needs.build-and-push-to-ecr.outputs.built_image_tag }}"
             
-            # 유효성 검사
             if [ -z "$ECR_REGISTRY_URL_SEOUL" ] || [ -z "$ECR_REPOSITORY_VAL" ] || [ -z "$IMAGE_TAG_VAL" ] || [ "${{ secrets.AWS_ACCOUNT_ID }}" == "" ]; then
               echo "오류: ECR 이미지 정보를 구성하는 데 필요한 값이 누락되었습니다 (서울)."
-              echo "ECR_REGISTRY_URL_SEOUL (구성됨): [$ECR_REGISTRY_URL_SEOUL]"
-              echo "ECR_REPOSITORY_VAL (from needs): [$ECR_REPOSITORY_VAL]"
-              echo "IMAGE_TAG_VAL (from needs): [$IMAGE_TAG_VAL]"
-              echo "AWS_ACCOUNT_ID Secret (존재 여부): ${{ secrets.AWS_ACCOUNT_ID != '' }}"
               exit 1
             fi
             
@@ -134,14 +128,13 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # ✨ ECR 레지스트리 주소 직접 구성 (도쿄 리전용) ✨
-            ECR_REGISTRY_URL_TOKYO="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-1.amazonaws.com"
+            # ECR 레지스트리 주소 직접 구성 (도쿄 리전용)
+            ECR_REGISTRY_URL_TOKYO="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-1.amazonaws.com" # 도쿄 리전
             ECR_REPOSITORY_VAL="${{ needs.build-and-push-to-ecr.outputs.built_ecr_repository }}"
             IMAGE_TAG_VAL="${{ needs.build-and-push-to-ecr.outputs.built_image_tag }}"
 
             if [ -z "$ECR_REGISTRY_URL_TOKYO" ] || [ -z "$ECR_REPOSITORY_VAL" ] || [ -z "$IMAGE_TAG_VAL" ] || [ "${{ secrets.AWS_ACCOUNT_ID }}" == "" ]; then
               echo "오류: ECR 이미지 정보를 구성하는 데 필요한 값이 누락되었습니다 (도쿄)."
-              # ... (디버깅 echo 문들)
               exit 1
             fi
 

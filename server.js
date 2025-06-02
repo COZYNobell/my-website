@@ -1,51 +1,61 @@
 // 1. 필요한 모듈 가져오기
 const express = require('express');
-const axios = require('axios'); // 날씨/지도 API 등에서 사용
-require('dotenv').config();    // .env 파일 내용을 process.env로 로드 (파일 최상단 권장)
+const axios = require('axios');
+require('dotenv').config(); 
 const session = require('express-session');
-const bcrypt = require('bcrypt'); // 비밀번호 해싱에 직접 사용
+const bcrypt = require('bcrypt');
 const mysql = require('mysql2/promise');
-const path = require('path');   // 파일 경로 처리를 위해 필요
+const path = require('path');
 
 // 2. Express 앱 생성 및 포트 설정
 const app = express();
 const port = process.env.PORT || 3000;
 
-// 환경 변수 로드 확인 로그 (애플리케이션 시작 시 한 번만 실행)
+// 환경 변수 로드 확인 로그
 console.log("애플리케이션 시작 - .env 파일 로드");
 console.log("DB_HOST:", process.env.DB_HOST);
 console.log("DB_USER:", process.env.DB_USER);
 console.log("DB_PASSWORD (존재 여부만):", process.env.DB_PASSWORD ? "설정됨" : "설정 안됨");
-console.log("DB_NAME:", process.env.DB_NAME);
+console.log("DB_NAME:", process.env.DB_NAME); // 예: master_db
 console.log("SESSION_SECRET (존재 여부만):", process.env.SESSION_SECRET ? "설정됨" : "설정 안됨");
 console.log("OPENWEATHERMAP_API_KEY (존재 여부만):", process.env.OPENWEATHERMAP_API_KEY ? "설정됨" : "설정 안됨");
 console.log("Maps_API_KEY (존재 여부만):", process.env.Maps_API_KEY ? "설정됨" : "설정 안됨");
 
-// MySQL Connection Pool 설정
+// MySQL Connection Pool 설정 (✨ 'database' 옵션 제거! ✨)
 const dbPool = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME, // ✨ DB_NAME을 풀 설정에 포함! ✨
+  // database: process.env.DB_NAME, // <-- 이 라인을 주석 처리 또는 삭제합니다.
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
 });
 
-// 데이터베이스 및 테이블 초기화 함수
+// 데이터베이스 스키마 및 테이블 생성/확인 함수 (수정됨)
 async function initializeDatabase() {
   let connection;
   try {
-    // 스키마(데이터베이스) 생성을 위해 DB 이름 없이 먼저 연결 시도 (선택적, 보통 DB는 미리 존재)
-    // 여기서는 dbPool에 database가 명시되어 있으므로, 해당 DB가 존재한다고 가정하고 바로 테이블 생성 시도.
-    // 만약 DB 자체가 없을 수 있는 환경이라면, DB 이름 없는 별도 풀로 CREATE DATABASE 실행 후 진행.
-    // 지금은 DB_NAME 환경변수가 있고, 해당 DB가 RDS에 생성되어 있다고 가정.
-    connection = await dbPool.getConnection();
-    console.log(`MySQL 서버 (${process.env.DB_HOST})의 '${process.env.DB_NAME}' 데이터베이스에 연결 시도 중...`);
-    // dbPool 생성 시 database 옵션을 사용했으므로, 별도의 USE DB_NAME이 필수는 아님.
-    // 하지만 명시적으로 한번 더 확인차원에서 로그를 남길 수 있음.
-    console.log(`'${process.env.DB_NAME}' 데이터베이스 사용 준비 완료 (테이블 생성 시작).`);
+    connection = await dbPool.getConnection(); // DB 이름 없이 서버에 먼저 연결
+    console.log(`MySQL 서버 (${process.env.DB_HOST})에 성공적으로 연결되었습니다. (스키마/테이블 생성 시작)`);
 
+    const dbNameToUse = process.env.DB_NAME;
+    if (!dbNameToUse) {
+      console.error("🔴 DB_NAME 환경 변수가 설정되지 않았습니다! 초기화를 중단합니다.");
+      throw new Error("DB_NAME is not set in environment variables");
+    }
+
+    // 1. 데이터베이스(스키마) 생성 (없으면)
+    console.log(`'CREATE DATABASE IF NOT EXISTS \`${dbNameToUse}\`' 실행 시도...`);
+    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbNameToUse}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+    console.log(`🟢 '${dbNameToUse}' 데이터베이스 생성 또는 이미 존재함.`);
+
+    // 2. 생성한 데이터베이스 사용 (이 커넥션에 대해)
+    console.log(`'USE \`${dbNameToUse}\`' 실행 시도...`);
+    await connection.query(`USE \`${dbNameToUse}\`;`);
+    console.log(`🟢 '${dbNameToUse}' 데이터베이스 사용 준비 완료 (테이블 생성 시작).`);
+
+    // 3. 테이블들 생성 (없으면)
     await connection.query(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTO_INCREMENT,
@@ -54,7 +64,7 @@ async function initializeDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-    console.log("users 테이블 준비 완료.");
+    console.log("🟢 users 테이블 준비 완료.");
 
     await connection.query(`
       CREATE TABLE IF NOT EXISTS favorites (
@@ -67,7 +77,7 @@ async function initializeDatabase() {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-    console.log("favorites 테이블 준비 완료.");
+    console.log("🟢 favorites 테이블 준비 완료.");
 
     await connection.query(`
       CREATE TABLE IF NOT EXISTS weather_subscriptions (
@@ -83,15 +93,13 @@ async function initializeDatabase() {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-    console.log("weather_subscriptions 테이블 준비 완료.");
+    console.log("🟢 weather_subscriptions 테이블 준비 완료.");
+    
+    console.log(`✅ 데이터베이스 '${dbNameToUse}' 및 모든 테이블이 성공적으로 준비되었습니다.`);
 
   } catch (error) {
-    console.error("데이터베이스 초기화 중 오류 발생:", error.message);
-    // DB_NAME이 없거나, 해당 DB에 접속/생성 권한이 없을 때 주로 발생
-    if (error.code === 'ER_BAD_DB_ERROR' || error.code === 'ER_ACCESS_DENIED_ERROR') {
-        console.error(`DB_NAME 환경변수(${process.env.DB_NAME})에 지정된 데이터베이스가 존재하지 않거나 접근 권한이 없는지 확인하세요.`);
-    }
-    console.error("오류 스택:", error.stack);
+    console.error("🔴 데이터베이스 초기화 중 심각한 오류 발생:", error.message);
+    console.error("🔴 오류 스택:", error.stack);
   } finally {
     if (connection) {
       connection.release();
@@ -103,8 +111,7 @@ async function initializeDatabase() {
 // 애플리케이션 시작 시 DB 및 테이블 초기화 실행
 initializeDatabase();
 
-
-// API 키 (환경 변수에서 로드)
+// API 키
 const OPENWEATHERMAP_API_KEY = process.env.OPENWEATHERMAP_API_KEY;
 const Maps_API_KEY = process.env.Maps_API_KEY;
 
@@ -112,6 +119,10 @@ const Maps_API_KEY = process.env.Maps_API_KEY;
 app.use(express.static(path.join(__dirname, 'public'))); 
 app.use(express.urlencoded({ extended: true })); 
 app.use(express.json()); 
+
+// 세션 미들웨어 설정
+// ✨ 참고: 프로덕션 환경에서는 MemoryStore 대신 Redis나 다른 세션 스토어를 사용하는 것이 좋습니다. ✨
+// MemoryStore는 개발용으로만 적합하며, 메모리 누수 및 확장성 문제가 있을 수 있습니다.
 app.use(session({
   secret: process.env.SESSION_SECRET || '6845ee0aea14277c760ae82669b03d5b65454f3515573c4bb84fd4f159df3a4c', 
   resave: false,
@@ -122,7 +133,7 @@ app.use(session({
   } 
 }));
 
-// 인증 확인 미들웨어 (API 요청 시 JSON 응답, 일반 요청 시 로그인 페이지로 리디렉션, 디버깅 로그 추가)
+// 인증 확인 미들웨어
 function ensureAuthenticated(req, res, next) {
     console.log(`[DEBUG] ensureAuthenticated: Path: ${req.path}, Method: ${req.method}, Authenticated: ${req.session.isAuthenticated}, User: ${JSON.stringify(req.session.user)}, AcceptHeader: ${req.headers.accept}`);
     if (req.session.isAuthenticated && req.session.user) {
@@ -140,7 +151,6 @@ function ensureAuthenticated(req, res, next) {
 }
 
 // --- HTML 페이지 제공 라우트 ---
-// 이 HTML 파일들은 프로젝트의 'public' 폴더 안에 있어야 합니다.
 app.get('/signup', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'signup.html'));
 });
@@ -154,7 +164,6 @@ app.get('/subscribe', ensureAuthenticated, (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'subscribe.html'));
 });
 
-
 // --- 직접 인증 라우트 ---
 app.post('/signup', async (req, res) => {
     const { email, password } = req.body;
@@ -164,9 +173,7 @@ app.post('/signup', async (req, res) => {
     let connection;
     try {
         connection = await dbPool.getConnection();
-        // dbPool 생성 시 database 옵션을 사용했으므로, 별도의 USE DB_NAME은 필수는 아님.
-        // 하지만 명시적으로 사용하고 싶다면 아래 주석 해제 (단, initializeDatabase에서 이미 USE 하고 있음)
-        // await connection.query(`USE \`${process.env.DB_NAME}\``); 
+        await connection.query(`USE \`${process.env.DB_NAME}\``); // ✨ DB 사용 명시 ✨
 
         const [existingUsers] = await connection.query("SELECT * FROM users WHERE email = ?", [email]);
         if (existingUsers.length > 0) {
@@ -193,6 +200,8 @@ app.post('/login', async (req, res) => {
     let connection;
     try {
         connection = await dbPool.getConnection();
+        await connection.query(`USE \`${process.env.DB_NAME}\``); // ✨ DB 사용 명시 ✨
+
         const [users] = await connection.query("SELECT * FROM users WHERE email = ?", [email]);
         if (users.length === 0) {
             return res.status(401).send(`가입되지 않은 이메일이거나 비밀번호가 일치하지 않습니다. <a href="/login">다시 시도</a>`);
@@ -233,6 +242,8 @@ app.get('/logout', (req, res, next) => {
 
 // API: 현재 로그인된 사용자 정보
 app.get('/api/current-user', ensureAuthenticated, (req, res) => {
+    // ensureAuthenticated를 통과하면 req.session.user가 존재함
+    // DB를 사용하지 않는 API이므로 별도의 USE DB_NAME 불필요
     res.json({ loggedIn: true, user: req.session.user });
 });
 
@@ -242,6 +253,7 @@ app.post('/api/favorites', ensureAuthenticated, async (req, res) => {
   let connection; 
   try {
     connection = await dbPool.getConnection(); 
+    await connection.query(`USE \`${process.env.DB_NAME}\``); // ✨ DB 사용 명시 ✨
     const { location_name, latitude, longitude } = req.body;  
     const userId = req.session.user.id; 
     if (!location_name || latitude === undefined || longitude === undefined) {
@@ -271,6 +283,7 @@ app.get('/api/favorites', ensureAuthenticated, async (req, res) => {
   let connection; 
   try {
     connection = await dbPool.getConnection(); 
+    await connection.query(`USE \`${process.env.DB_NAME}\``); // ✨ DB 사용 명시 ✨
     const userId = req.session.user.id;
     const sql = `SELECT id, location_name, latitude, longitude, created_at FROM favorites WHERE user_id = ? ORDER BY created_at DESC`;
     const params = [userId];
@@ -289,6 +302,7 @@ app.delete('/api/favorites/:id', ensureAuthenticated, async (req, res) => {
   let connection; 
   try {
     connection = await dbPool.getConnection(); 
+    await connection.query(`USE \`${process.env.DB_NAME}\``); // ✨ DB 사용 명시 ✨
     const favoriteId = req.params.id;  
     const userId = req.session.user.id; 
     const sql = `DELETE FROM favorites WHERE id = ? AND user_id = ?`;
@@ -314,6 +328,8 @@ app.post('/api/weather-subscriptions', ensureAuthenticated, async (req, res) => 
   let connection;
   try {
     connection = await dbPool.getConnection();
+    await connection.query(`USE \`${process.env.DB_NAME}\``); // ✨ DB 사용 명시 ✨
+
     const { location_name, latitude, longitude, condition_type, condition_value } = req.body;
     const userId = req.session.user.id;
 
@@ -384,6 +400,7 @@ app.get('/', (req, res) => {
 
 // --- 기존 날씨, 지도 API 라우트들 ---
 app.get('/weather', async (req, res) => {
+  // 이 API는 로그인이 필요 없을 수 있으므로 ensureAuthenticated 미적용
   if (!OPENWEATHERMAP_API_KEY) return res.status(500).send('서버에 OpenWeatherMap API 키가 설정되지 않았어요.');
   const city = 'Seoul';
   const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${OPENWEATHERMAP_API_KEY}&units=metric&lang=kr`;
@@ -394,6 +411,7 @@ app.get('/weather', async (req, res) => {
 });
 
 app.get('/api/weather-by-coords', async (req, res) => {
+  // 이 API는 클라이언트 측에서 위도/경도만으로 호출하므로, 지금은 로그인 불필요 가정
   const { lat, lon } = req.query;
   if (!lat || !lon) return res.status(400).json({ message: '위도(lat)와 경도(lon) 파라미터가 필요합니다.' });
   if (!OPENWEATHERMAP_API_KEY) return res.status(500).json({ message: '서버에 OpenWeatherMap API 키가 설정되지 않았습니다.' });
@@ -405,6 +423,7 @@ app.get('/api/weather-by-coords', async (req, res) => {
 });
 
 app.get('/api/weather-forecast', async (req, res) => {
+  // 이 API도 클라이언트 측에서 위도/경도만으로 호출하므로, 지금은 로그인 불필요 가정
   const { lat, lon } = req.query;
   if (!lat || !lon) return res.status(400).json({ message: '위도(lat)와 경도(lon) 파라미터가 필요합니다.' });
   if (!OPENWEATHERMAP_API_KEY) return res.status(500).json({ message: '서버에 OpenWeatherMap API 키가 설정되지 않았습니다.' });

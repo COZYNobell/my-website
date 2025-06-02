@@ -3,166 +3,185 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>날씨 구독 설정</title>
+    <title>나의 통합 대시보드</title>
     <style>
-        /* 이전 답변에서 드린 스타일과 동일하게 사용하시거나, dashboard.html 스타일을 참고하세요. */
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 90vh; background-color: #f8f9fa; margin: 0; padding: 20px; box-sizing: border-box; }
-        .container { background-color: white; padding: 30px 40px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; max-width: 500px; }
-        h1 { text-align: center; margin-bottom: 25px; color: #343a40; font-size: 1.8em; }
-        label { display: block; margin-top: 15px; margin-bottom: 8px; font-weight: 600; color: #495057; }
-        input[type="text"], input[type="number"], select { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ced4da; border-radius: 5px; box-sizing: border-box; font-size: 1em; }
-        button[type="submit"] { width: 100%; padding: 12px; background-color: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 1.1em; font-weight: 600; transition: background-color 0.2s ease-in-out; }
-        button[type="submit"]:hover { background-color: #218838; }
-        #message { margin-top: 20px; text-align: center; padding: 10px; border-radius: 5px; font-weight: 500; }
-        #message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        #message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        .nav-links { text-align: center; margin-top: 25px; }
-        .nav-links a { color: #007bff; text-decoration: none; margin: 0 10px; }
-        .nav-links a:hover { text-decoration: underline; }
-        .hidden { display: none; } 
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; 
+            margin: 0; 
+            background-color: #f8f9fa; 
+            color: #212529;
+            line-height: 1.6;
+        }
+        .header { 
+            background-color: #ffffff; 
+            padding: 10px 20px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            border-bottom: 1px solid #dee2e6;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .header .brand a { 
+            font-size: 1.5em; 
+            color: #007bff; 
+            text-decoration: none; 
+            font-weight: bold;
+        }
+        .header .auth-links span, 
+        .header .auth-links a { 
+            margin-left: 15px; 
+            color: #007bff; 
+            text-decoration: none; 
+            font-size: 0.95em;
+        }
+        .header .auth-links a:hover { text-decoration: underline; }
+        
+        main { padding: 20px; }
+        .map-container { 
+            width: 100%; 
+            height: 50vh; 
+            background-color: #e9ecef; 
+            margin-bottom: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border: 1px solid #ced4da;
+        }
+        #address-display { 
+            text-align: center; 
+            padding: 12px; 
+            font-weight: 500; 
+            background-color: #e9ecef; 
+            border-radius: 5px; 
+            margin-bottom: 25px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            flex-wrap: wrap;
+            font-size: 1.05em;
+            border: 1px solid #ced4da;
+        }
+        #currentAddressText { margin-right: 10px; }
+        #addToFavoritesBtn { 
+            background: none; 
+            border: none; 
+            font-size: 1.8em; /* 별표 크기 */
+            color: #ffc107; /* 노란색 별표 */
+            cursor: pointer; 
+            padding: 0 5px; 
+            transition: transform 0.2s ease;
+        }
+        #addToFavoritesBtn:hover { transform: scale(1.2); }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); /* 반응형 그리드 */
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+        .info-grid section, #favorites-section { 
+            background-color: white; 
+            padding: 20px; 
+            border: 1px solid #dee2e6; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .info-grid h2, #favorites-section h2 { 
+            color: #007bff; 
+            border-bottom: 2px solid #007bff; 
+            padding-bottom: 10px; 
+            margin-top: 0; 
+            font-size: 1.4em;
+        }
+        
+        #favorites-list { list-style-type: none; padding-left: 0; margin-top: 15px;}
+        #favorites-list .favorite-item { 
+            border-bottom: 1px dashed #ced4da; 
+            padding: 12px 5px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+        }
+        #favorites-list .favorite-item:last-child { border-bottom: none; }
+        #favorites-list .favorite-item .favorite-name { 
+            cursor: pointer; 
+            flex-grow: 1; 
+            color: #495057;
+            font-weight: 500;
+        }
+        #favorites-list .favorite-item .favorite-name:hover { text-decoration: underline; color: #0056b3; }
+        #favorites-list .favorite-item button.delete-favorite-btn { 
+            margin-left: 10px; 
+            padding: 5px 10px; 
+            font-size: 0.8em; 
+            cursor: pointer; 
+            background-color: #f8d7da; 
+            border: 1px solid #f5c6cb; 
+            color: #721c24;
+            border-radius: 4px;
+            transition: background-color 0.2s ease;
+        }
+        #favorites-list .favorite-item button.delete-favorite-btn:hover { background-color: #f1b0b7; }
+
+        #weather-today p, #weather-forecast p, #weather-forecast div { line-height: 1.7; color: #495057; }
+        #weather-today img, #weather-forecast img { vertical-align: middle; margin: 0 5px; width: 40px; height: 40px; }
+        
+        .hidden { display: none !important; } 
+        .nav-links-bottom { text-align: center; margin-top:30px; padding-top:20px; border-top: 1px solid #dee2e6; }
+        .nav-links-bottom a { color: #007bff; text-decoration: none; margin: 0 10px; font-weight: 500; }
+        .nav-links-bottom a:hover { text-decoration: underline; }
+        #loadingFavorites, #noFavorites { font-style: italic; color: #6c757d; text-align: center; padding: 10px 0;}
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>날씨 구독 설정하기</h1>
-        <form id="subscribeForm">
-            <div>
-                <label for="locationName">지역 이름 (예: 서울특별시 중구):</label>
-                <input type="text" id="locationName" name="location_name" required>
-            </div>
-            <div>
-                <label for="latitude">위도:</label>
-                <input type="number" step="any" id="latitude" name="latitude" required placeholder="예: 37.5665">
-            </div>
-            <div>
-                <label for="longitude">경도:</label>
-                <input type="number" step="any" id="longitude" name="longitude" required placeholder="예: 126.9780">
-            </div>
-            <div>
-                <label for="conditionType">알림 받을 날씨 조건:</label>
-                <select id="conditionType" name="condition_type">
-                    <option value="">-- 조건 선택 --</option>
-                    <option value="rain">비 올 때</option>
-                    <option value="snow">눈 올 때</option>
-                    <option value="clear">맑을 때</option>
-                    <option value="clouds">흐릴 때 (구름 많음)</option>
-                    <option value="temp_gt">기온이 X도 초과</option>
-                    <option value="temp_lt">기온이 X도 미만</option>
-                </select>
-            </div>
-            <div id="conditionValueDiv" class="hidden"> 
-                <label for="conditionValue">조건 값 (예: 온도):</label>
-                <input type="number" step="any" id="conditionValue" name="condition_value" placeholder="예: 30 (온도 입력)">
-            </div>
-            <button type="submit">구독하기</button>
-        </form>
-        <div id="message"></div>
-        <div class="nav-links">
-            <p><a href="/">홈으로</a> | <a href="/dashboard.html">내 대시보드</a></p>
+    <header class="header">
+        <div class="brand">
+            <a href="/">나의 멋진 웹사이트</a>
         </div>
+        <div id="authLinks">
+            <span id="userInfoSpan" class="hidden">안녕하세요, <strong id="userEmail"></strong>님!</span>
+            <a href="/login" id="loginLink">로그인</a>
+            <a href="/signup" id="signupLink">회원가입</a>
+            <a href="/logout" id="logoutLink" class="hidden">로그아웃</a>
+        </div>
+    </header>
+
+    <main>
+        <div id="map-container" class="map-container">
+            </div>
+
+        <div id="address-display">
+            <span id="currentAddressText" style="margin-right: 10px;">지도를 클릭하여 위치를 선택해주세요.</span>
+            <button id="addToFavoritesBtn" class="hidden" title="이 위치 즐겨찾기에 추가">⭐</button> 
+        </div>
+
+        <div class="info-grid">
+            <section id="weather-today">
+                <h2>오늘 날씨</h2>
+                <p>날씨 정보를 보려면 지도에서 위치를 선택해주세요.</p>
+            </section>
+            <section id="weather-forecast">
+                <h2>주간 예보 (향후 2일)</h2>
+                <p>예보 정보를 보려면 지도에서 위치를 선택해주세요.</p>
+            </section>
+        </div>
+
+        <section id="favorites-section" class="hidden"> {/* 초기에는 숨김, 로그인 시 JS로 표시 */}
+            <h2>⭐ 나의 즐겨찾기 목록</h2>
+            <p id="loadingFavorites" class="hidden">즐겨찾기 목록을 불러오는 중...</p>
+            <ul id="favoritesList">
+                </ul>
+            <p id="noFavorites" class="hidden">등록된 즐겨찾기가 없습니다.</p>
+        </section>
+    </main>
+
+    <div class="nav-links-bottom">
+        <a href="/">홈으로</a> | <a href="/subscribe">날씨 구독 설정</a>
     </div>
 
-    <script>
-        const conditionTypeSelect = document.getElementById('conditionType');
-        const conditionValueDiv = document.getElementById('conditionValueDiv');
-        const conditionValueInput = document.getElementById('conditionValue');
-
-        if(conditionTypeSelect && conditionValueDiv && conditionValueInput) {
-            conditionTypeSelect.addEventListener('change', function() {
-                if (this.value === 'temp_gt' || this.value === 'temp_lt') {
-                    conditionValueDiv.classList.remove('hidden');
-                    conditionValueInput.required = true;
-                    conditionValueInput.placeholder = (this.value === 'temp_gt') ? "예: 30 (이 온도보다 높을 때 알림)" : "예: 0 (이 온도보다 낮을 때 알림)";
-                } else {
-                    conditionValueDiv.classList.add('hidden');
-                    conditionValueInput.required = false;
-                    conditionValueInput.value = ''; 
-                }
-            });
-        } else {
-            console.warn("subscribe.html: 날씨 조건 관련 DOM 요소를 찾을 수 없습니다. ID를 확인해주세요.");
-        }
-
-        document.getElementById('subscribeForm').addEventListener('submit', async function(event) {
-            event.preventDefault(); 
-            const messageDiv = document.getElementById('message');
-            messageDiv.textContent = ''; 
-            messageDiv.className = '';   
-
-            const locationName = document.getElementById('locationName').value;
-            const latitudeStr = document.getElementById('latitude').value;
-            const longitudeStr = document.getElementById('longitude').value;
-            const conditionType = document.getElementById('conditionType').value;
-            const conditionValue = document.getElementById('conditionValue').value;
-
-            if (!locationName || !latitudeStr || !longitudeStr || !conditionType) {
-                messageDiv.textContent = '오류: 지역명, 위도, 경도, 날씨 조건 종류는 필수입니다.';
-                messageDiv.className = 'error';
-                return;
-            }
-            if ((conditionType === 'temp_gt' || conditionType === 'temp_lt') && !conditionValue) {
-                messageDiv.textContent = '오류: 선택된 날씨 조건에 대한 값을 입력해주세요.';
-                messageDiv.className = 'error';
-                return;
-            }
-
-            const formData = {
-                location_name: locationName,
-                latitude: parseFloat(latitudeStr),
-                longitude: parseFloat(longitudeStr),
-                condition_type: conditionType,
-            };
-
-            if (conditionValueInput.required && conditionValue !== '') {
-                // condition_value가 숫자여야 하는 조건이라면 parseFloat(conditionValue)
-                formData.condition_value = conditionValue; 
-            }
-            
-            console.log('Submitting subscription data:', formData);
-
-            try {
-                const response = await fetch('/api/weather-subscriptions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(formData)
-                });
-
-                if (response.status === 401) { 
-                    const data = await response.json().catch(() => ({ 
-                        message: '로그인이 필요합니다. 잠시 후 로그인 페이지로 이동합니다.' ,
-                        redirectTo: '/login' 
-                    }));
-                    messageDiv.textContent = '오류: ' + data.message;
-                    messageDiv.className = 'error';
-                    if (data.redirectTo) {
-                        setTimeout(() => { window.location.href = data.redirectTo; }, 2000);
-                    } else {
-                         setTimeout(() => { window.location.href = '/login'; }, 2000);
-                    }
-                    return; 
-                }
-
-                // 401이 아닌 경우, response.ok로 성공여부 먼저 확인 후 json() 호출
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({ message: `서버 응답 오류: ${response.status}` }));
-                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-                }
-                
-                const result = await response.json(); 
-                
-                messageDiv.textContent = '성공: ' + result.message;
-                messageDiv.className = 'success'; 
-                this.reset(); 
-                if(conditionValueDiv) conditionValueDiv.classList.add('hidden');
-
-            } catch (error) { 
-                console.error('구독 요청 실패 (네트워크 또는 코드 오류):', error);
-                messageDiv.textContent = '오류: ' + error.message;
-                messageDiv.className = 'error';
-            }
-        });
-    </script>
+    <script src="/js/dashboard.js"></script> 
+    
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAsBiqFxUsjLjxFC9waxyzP2xjK-4c0YS8&callback=initDashboardMap&language=ko&region=KR&libraries=marker,geocoding">
+        </script>
 </body>
 </html>

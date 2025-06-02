@@ -1,28 +1,31 @@
 // public/js/dashboard.js
 
-// --- DOM 요소들 ---
+// --- DOM 요소 가져오기 ---
 const userEmailSpan = document.getElementById('userEmail'); // 헤더의 사용자 이메일 표시용 (strong 태그 안)
 const userInfoSpanElement = document.getElementById('userInfoSpan'); // 헤더의 "안녕하세요, ...님!" 전체 span
 
-const favoritesSectionDiv = document.getElementById('favorites-section'); // 즐겨찾기 목록 전체 섹션
+const favoritesSectionDiv = document.getElementById('favorites-section'); 
 const favoritesListUl = document.getElementById('favorites-list'); // 즐겨찾기 <ul>
 const noFavoritesP = document.getElementById('noFavorites');         // "즐겨찾기 없음" 메시지
 const loadingFavoritesP = document.getElementById('loadingFavorites'); // "로딩 중" 메시지
 
-const weatherTodayP = document.querySelector('#weather-today p');       // 오늘 날씨 정보 p 태그
-const weatherForecastP = document.querySelector('#weather-forecast p'); // 주간 예보 정보 p 태그
+const weatherTodaySection = document.getElementById('weather-today'); // 오늘 날씨 섹션
+const weatherForecastSection = document.getElementById('weather-forecast'); // 주간 예보 섹션
+const weatherTodayP = weatherTodaySection ? weatherTodaySection.querySelector('p') : null; // 오늘 날씨 정보 p 태그
+const weatherForecastP = weatherForecastSection ? weatherForecastSection.querySelector('p') : null; // 주간 예보 정보 p 태그
 
-const currentAddressTextSpan = document.getElementById('currentAddressText'); // 주소 텍스트만 표시할 span (dashboard.html에 추가 필요)
-const addToFavoritesBtn = document.getElementById('addToFavoritesBtn');       // 즐겨찾기 추가(별표) 버튼 (dashboard.html에 추가 필요)
+const addressDisplayDiv = document.getElementById('address-display'); // 주소와 즐겨찾기 버튼을 감싸는 div
+const currentAddressTextSpan = document.getElementById('currentAddressText'); // 주소 텍스트만 표시할 span
+const addToFavoritesBtn = document.getElementById('addToFavoritesBtn');       // 즐겨찾기 추가(별표) 버튼
 
 const loginLink = document.getElementById('loginLink');         // 헤더 로그인 링크
 const signupLink = document.getElementById('signupLink');       // 헤더 회원가입 링크
 const logoutLink = document.getElementById('logoutLink');       // 헤더 로그아웃 링크
 
 // --- 전역(모듈 스코프) 변수 ---
-let map;
-let geocoder;
-let currentMarker;
+let map; // Google 지도 객체
+let geocoder; // Google Geocoder 객체
+let currentMarker; // 현재 지도에 표시된 마커
 let currentUser = null;           // 현재 로그인된 사용자 정보 {id, email}
 let currentMapSelection = null;   // 현재 지도에서 선택/표시된 위치 정보 {name, lat, lng}
 
@@ -34,62 +37,81 @@ async function fetchData(apiUrl, options = {}) {
         if (response.status === 401) { // 서버가 401 Unauthorized 응답
             const data = await response.json().catch(() => ({ 
                 message: '로그인이 필요합니다. 로그인 페이지로 이동합니다.', 
-                redirectTo: '/login' 
+                redirectTo: '/login' // 기본값
             }));
-            console.warn('fetchData 401:', data.message, 'Redirecting to:', data.redirectTo);
-            window.location.href = data.redirectTo || '/login'; // 로그인 페이지로 리디렉션
-            throw new Error(data.message || '로그인이 필요합니다.'); // 함수 실행 중단
+            console.warn('fetchData 401:', data.message);
+            // 사용자에게 알림 후 페이지 이동 (선택 사항)
+            // alert(data.message); 
+            if (data.redirectTo) {
+                window.location.href = data.redirectTo;
+            } else {
+                window.location.href = '/login'; // 안전장치로 기본 로그인 페이지 이동
+            }
+            // 오류를 발생시켜 .catch() 블록으로 가거나, 
+            // 여기서 특정 값을 반환하여 호출부가 인지하고 추가 처리하게 할 수 있음.
+            throw new Error(data.message || '로그인이 필요합니다.'); 
         }
 
         if (!response.ok) { // 401 외의 다른 HTTP 오류
-            const errorData = await response.json().catch(() => ({ message: `서버 응답 오류: ${response.status}` }));
+            // response.json()을 먼저 시도하고, 실패하면 기본 오류 메시지 사용
+            let errorData = { message: `서버 응답 오류: ${response.status}` };
+            try {
+                errorData = await response.json();
+            } catch (e) {
+                console.warn('오류 응답 JSON 파싱 실패, 기본 메시지 사용. 응답 상태:', response.status, response.statusText);
+                // text()로 실제 응답 내용을 확인해볼 수도 있습니다.
+                // const textError = await response.text();
+                // console.error("서버로부터 받은 실제 응답(텍스트):", textError);
+            }
             console.error('API 응답 오류:', errorData);
             throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
         }
         return await response.json(); // 성공 시 JSON 데이터 반환
     } catch (error) {
         console.error(`API 호출 (${apiUrl}) 실패:`, error.message);
-        // 이 함수를 호출한 쪽에서 오류를 인지하고 UI 업데이트 등을 하도록 오류를 다시 throw
+        // 이 함수를 호출한 곳에서 이 오류를 받아서 UI 업데이트 등 적절한 처리를 할 수 있도록 오류를 다시 throw.
+        // 또는 여기서 직접 updateUIForLoggedOutStateOnError() 같은 공통 UI 처리 함수를 호출할 수도 있습니다.
         throw error; 
     }
 }
 
 // --- UI 업데이트 함수 ---
-function updateUIForLoggedInState() {
-    if (userInfoSpanElement) userInfoSpanElement.classList.remove('hidden');
-    if (userEmailSpan && currentUser) userEmailSpan.textContent = currentUser.email;
-    
+function updateUIForLoggedInState(user) {
+    currentUser = user; 
+    if (userInfoSpanElement) {
+        userInfoSpanElement.classList.remove('hidden');
+        if (userEmailSpan) userEmailSpan.textContent = user.email;
+    }
     if (favoritesSectionDiv) favoritesSectionDiv.classList.remove('hidden');
     
     if (loginLink) loginLink.classList.add('hidden');
     if (signupLink) signupLink.classList.add('hidden');
     if (logoutLink) logoutLink.classList.remove('hidden');
 
-    // 즐겨찾기 추가 버튼은 지도에서 위치가 선택되었을 때만 표시 (updateAddressAndWeather에서 처리)
-    if (addToFavoritesBtn && currentMapSelection) {
+    // 즐겨찾기 추가 버튼은 지도 위치 선택 시점에 로그인 상태를 보고 표시 여부 결정
+    // (updateAddressAndWeather 함수에서 처리)
+    if (currentMapSelection && addToFavoritesBtn) {
         addToFavoritesBtn.classList.remove('hidden');
-    } else if (addToFavoritesBtn) {
-        addToFavoritesBtn.classList.add('hidden');
     }
 }
 
 function updateUIForLoggedOutState() {
-    currentUser = null;
+    currentUser = null; 
     if (userInfoSpanElement) userInfoSpanElement.classList.add('hidden');
     if (userEmailSpan) userEmailSpan.textContent = '';
 
     if (favoritesSectionDiv) favoritesSectionDiv.classList.add('hidden');
-    if (favoritesListUl) favoritesListUl.innerHTML = ''; // 목록 비우기
+    if (favoritesListUl) favoritesListUl.innerHTML = ''; 
     if (noFavoritesP) {
          noFavoritesP.innerHTML = '로그인하시면 즐겨찾기 목록을 볼 수 있습니다. <a href="/login">로그인</a>';
-         noFavoritesP.classList.remove('hidden'); // 로그인 필요 메시지는 보여줌
+         noFavoritesP.classList.remove('hidden');
     }
     
     if (loginLink) loginLink.classList.remove('hidden');
     if (signupLink) signupLink.classList.remove('hidden');
     if (logoutLink) logoutLink.classList.add('hidden');
 
-    if (addToFavoritesBtn) addToFavoritesBtn.classList.add('hidden');
+    if (addToFavoritesBtn) addToFavoritesBtn.classList.add('hidden'); 
 
     if (weatherTodayP) weatherTodayP.textContent = '날씨 정보를 보려면 지도에서 위치를 선택하거나 로그인하세요.';
     if (weatherForecastP) weatherForecastP.textContent = '예보 정보를 보려면 지도에서 위치를 선택하거나 로그인하세요.';
@@ -99,29 +121,32 @@ function updateUIForLoggedOutState() {
 // --- 핵심 기능 함수들 ---
 async function loadCurrentUserInfo() {
     try {
-        const data = await fetchData('/api/current-user');
+        const data = await fetchData('/api/current-user'); 
         if (data && data.loggedIn) {
             updateUIForLoggedInState(data.user);
-            return data.user; // currentUser는 updateUIForLoggedInState에서 이미 설정됨
+            return data.user; 
         } else {
-            updateUIForLoggedOutState(); // 명시적으로 로그아웃 상태 UI 호출
+            updateUIForLoggedOutState(); 
             return null;
         }
     } catch (error) {
-        console.error('현재 사용자 정보 로드 실패 (대시보드):', error.message);
-        updateUIForLoggedOutState(); // 오류 발생 시 로그아웃 상태 UI
+        console.error('현재 사용자 정보 로드 최종 실패 (대시보드):', error.message);
+        updateUIForLoggedOutState(); 
         return null;
     }
 }
 
 async function loadAndDisplayFavorites() {
-    if (!currentUser) { // 로그인 안 했으면 함수 실행 안 함
-        updateUIForLoggedOutState(); // 혹시 모르니 UI 상태 확인
+    if (!currentUser) { 
+        updateUIForLoggedOutState(); 
         return;
     }
-    if (!favoritesListUl || !noFavoritesP || !loadingFavoritesP) return;
+    if (!favoritesListUl || !noFavoritesP || !loadingFavoritesP || !favoritesSectionDiv) {
+        console.warn("loadAndDisplayFavorites: 즐겨찾기 관련 DOM 요소 중 일부를 찾을 수 없습니다.");
+        return;
+    }
 
-    favoritesSectionDiv.classList.remove('hidden'); // 로그인 했으니 섹션 보이기
+    favoritesSectionDiv.classList.remove('hidden'); 
     loadingFavoritesP.classList.remove('hidden');
     favoritesListUl.innerHTML = '';
     noFavoritesP.classList.add('hidden');
@@ -138,7 +163,7 @@ async function loadAndDisplayFavorites() {
                 nameSpan.title = `클릭하여 지도 이동: ${fav.location_name} (위도: ${fav.latitude}, 경도: ${fav.longitude})`;
                 nameSpan.style.cursor = 'pointer';
                 nameSpan.onclick = () => {
-                    if (typeof google !== 'undefined' && map) { 
+                    if (typeof google !== 'undefined' && map ) { 
                         const location = { lat: parseFloat(fav.latitude), lng: parseFloat(fav.longitude) };
                         map.setCenter(location);
                         map.setZoom(15);
@@ -154,10 +179,10 @@ async function loadAndDisplayFavorites() {
                 
                 const deleteButton = document.createElement('button');
                 deleteButton.textContent = '삭제';
-                deleteButton.dataset.id = fav.id; // 삭제 시 사용할 ID
-                deleteButton.dataset.name = fav.location_name; // 확인 메시지용 이름
+                deleteButton.dataset.id = fav.id; 
+                deleteButton.dataset.name = fav.location_name; 
 
-                deleteButton.addEventListener('click', async function() { // 일반 함수로 변경하여 this 사용 방지
+                deleteButton.addEventListener('click', async function() { 
                     if (confirm(`'${this.dataset.name}' 즐겨찾기를 삭제하시겠습니까?`)) {
                         try {
                             await fetchData(`/api/favorites/${this.dataset.id}`, { method: 'DELETE' });
@@ -178,7 +203,6 @@ async function loadAndDisplayFavorites() {
         }
     } catch (error) {
         console.error('즐겨찾기 목록 로드 중 오류:', error.message);
-        // fetchData 내부에서 401 시 리디렉션됨. 여기는 다른 종류의 오류 (예: 500)
         if (favoritesListUl) favoritesListUl.innerHTML = '<li>즐겨찾기를 불러오는 데 실패했습니다. 관리자에게 문의하세요.</li>';
     } finally {
         if (loadingFavoritesP) loadingFavoritesP.classList.add('hidden');
@@ -186,9 +210,12 @@ async function loadAndDisplayFavorites() {
 }
 
 async function fetchAndDisplayWeather(lat, lon, locationName = null) {
-    if (!weatherTodayP || !weatherForecastP) return;
-    weatherTodayP.innerHTML = '오늘 날씨 정보 로딩 중...';
-    weatherForecastP.innerHTML = '주간 예보 정보 로딩 중...';
+    if (!weatherTodayP || !weatherForecastP) {
+         console.warn("fetchAndDisplayWeather: 날씨 정보 표시 DOM 요소가 없습니다.");
+         return;
+    }
+    weatherTodayP.innerHTML = '오늘 날씨 정보를 가져오는 중...';
+    weatherForecastP.innerHTML = '주간 예보 정보를 가져오는 중...';
 
     try {
         const [currentWeatherData, forecastData] = await Promise.all([
@@ -203,8 +230,8 @@ async function fetchAndDisplayWeather(lat, lon, locationName = null) {
                 온도: ${currentWeatherData.temperature !== undefined ? currentWeatherData.temperature + '°C' : '정보 없음'} (체감: ${currentWeatherData.feels_like !== undefined ? currentWeatherData.feels_like + '°C' : '정보 없음'})<br>
                 습도: ${currentWeatherData.humidity !== undefined ? currentWeatherData.humidity + '%' : '정보 없음'}
             `;
-        } else {
-            weatherTodayP.textContent = '현재 날씨 정보를 가져올 수 없습니다.';
+        } else if (weatherTodayP) { // fetchData가 null을 반환했을 수 있음 (예: 401 후 오류 throw)
+            weatherTodayP.textContent = '현재 날씨 정보를 가져올 수 없습니다. (로그인 또는 API 키 확인 필요)';
         }
 
         if (forecastData && forecastData.forecast) {
@@ -221,12 +248,11 @@ async function fetchAndDisplayWeather(lat, lon, locationName = null) {
                 forecastHtml += '예보 정보가 없습니다.';
             }
             weatherForecastP.innerHTML = forecastHtml;
-        } else {
-            weatherForecastP.textContent = '주간 예보 정보를 가져올 수 없습니다.';
+        } else if (weatherForecastP) {
+            weatherForecastP.textContent = '주간 예보 정보를 가져올 수 없습니다. (로그인 또는 API 키 확인 필요)';
         }
     } catch (error) {
         console.error('날씨 정보 표시 중 오류:', error.message);
-        // fetchData 내부에서 401은 리디렉션 처리됨. 여기서는 다른 오류.
         if (weatherTodayP) weatherTodayP.textContent = '날씨 정보를 불러오는 데 실패했습니다.';
         if (weatherForecastP) weatherForecastP.textContent = '예보 정보를 불러오는 데 실패했습니다.';
     }
@@ -234,7 +260,9 @@ async function fetchAndDisplayWeather(lat, lon, locationName = null) {
 
 async function updateAddressAndWeather(lat, lng, predefinedAddress = null) {
     let addressToDisplay = predefinedAddress;
-    if (currentAddressTextSpan) currentAddressTextSpan.textContent = predefinedAddress || '주소 변환 중...';
+    if (currentAddressTextSpan) {
+        currentAddressTextSpan.textContent = predefinedAddress || '주소 변환 중...';
+    }
     
     if (!predefinedAddress && typeof google !== 'undefined' && google.maps && google.maps.Geocoder && geocoder) {
         geocoder.geocode({ 'location': { lat, lng } }, (results, status) => {
@@ -254,9 +282,14 @@ async function updateAddressAndWeather(lat, lng, predefinedAddress = null) {
         if (!predefinedAddress && currentAddressTextSpan) {
             addressToDisplay = `위도: ${lat.toFixed(4)}, 경도: ${lng.toFixed(4)}`;
         }
-        if (currentAddressTextSpan) currentAddressTextSpan.textContent = addressToDisplay; // predefinedAddress 또는 위도/경도 표시
-        currentMapSelection = { name: addressToDisplay, lat: lat, lng: lng };
+        // predefinedAddress가 null이면서 geocoder도 사용 불가한 경우 addressToDisplay는 null일 수 있음
+        // 이 경우를 대비해 currentAddressTextSpan 업데이트 전에 null 체크 또는 기본값 할당
+        if (currentAddressTextSpan) currentAddressTextSpan.textContent = addressToDisplay || `위도: ${lat.toFixed(4)}, 경도: ${lng.toFixed(4)}`;
+        
+        currentMapSelection = { name: addressToDisplay || `위도: ${lat.toFixed(4)}, 경도: ${lng.toFixed(4)}`, lat: lat, lng: lng };
+        
         if (currentUser && addToFavoritesBtn) addToFavoritesBtn.classList.remove('hidden');
+        else if (addToFavoritesBtn) addToFavoritesBtn.classList.add('hidden');
         
         fetchAndDisplayWeather(lat, lng, addressToDisplay);
         if (typeof google === 'undefined' || !geocoder) console.warn("Google Maps Geocoder가 준비되지 않았습니다.");
@@ -264,7 +297,7 @@ async function updateAddressAndWeather(lat, lng, predefinedAddress = null) {
 }
 
 async function handleAddFavoriteClick() {
-    if (!currentUser) return; // 이미 fetchData에서 401 시 리디렉션 처리됨
+    if (!currentUser) return; 
     if (!currentMapSelection || !currentMapSelection.name || currentMapSelection.name.includes("변환 중") || currentMapSelection.name.includes("실패")) {
         alert("먼저 지도에서 유효한 위치를 선택하여 주소를 확인해주세요.");
         return;
@@ -284,7 +317,6 @@ async function handleAddFavoriteClick() {
         loadAndDisplayFavorites(); 
         if (addToFavoritesBtn) addToFavoritesBtn.classList.add('hidden');
     } catch (error) {
-        // fetchData에서 401은 이미 처리. 여기서는 그 외 오류.
         alert(`즐겨찾기 추가 실패: ${error.message}`);
         console.error("즐겨찾기 추가 API 호출 실패:", error);
     }
@@ -293,12 +325,15 @@ async function handleAddFavoriteClick() {
 // Google 지도 초기화 (HTML의 API 스크립트 로드 후 &callback=initDashboardMap 으로 호출됨)
 function initDashboardMap() {
     console.log("Google 지도 초기화 (initDashboardMap) 시작");
-    const initialLat = 37.5665; // 서울 시청
+    const initialLat = 37.5665; 
     const initialLng = 126.9780;
+    const initialLocation = { lat: initialLat, lng: initialLng };
     
     const mapElement = document.getElementById('map-container');
     if (!mapElement) {
         console.error("#map-container 요소를 찾을 수 없습니다.");
+        if (weatherTodayP) weatherTodayP.textContent = '지도 컨테이너를 찾을 수 없어 날씨 정보를 표시할 수 없습니다.';
+        if (weatherForecastP) weatherForecastP.textContent = '지도 컨테이너를 찾을 수 없어 예보 정보를 표시할 수 없습니다.';
         return;
     }
     if (typeof google === 'undefined' || typeof google.maps === 'undefined') {
@@ -310,10 +345,10 @@ function initDashboardMap() {
     try {
         map = new google.maps.Map(mapElement, {
             zoom: 12,
-            center: { lat: initialLat, lng: initialLng }
+            center: initialLocation
         });
         geocoder = new google.maps.Geocoder();
-        currentMarker = new google.maps.Marker({ map: null }); // 처음에는 마커 숨김
+        currentMarker = new google.maps.Marker({ map: null }); 
 
         map.addListener('click', (mapsMouseEvent) => {
             const clickedLat = mapsMouseEvent.latLng.lat();
@@ -325,13 +360,15 @@ function initDashboardMap() {
             updateAddressAndWeather(clickedLat, clickedLng);
         });
         
-        // currentUser가 이미 로드되었다면 (페이지가 매우 빨리 로드된 경우) 기본 날씨 표시
+        // currentUser가 이 시점에 이미 설정되어 있다면 (DOMContentLoaded 후 loadCurrentUserInfo가 먼저 완료된 경우)
+        // 또는 currentUser가 없더라도 기본 위치 날씨를 보여줄 수 있음.
+        // 여기서는 사용자가 로그인 되어 있고, 지도가 준비되면 기본 날씨를 표시하도록 함.
         if (currentUser) {
             updateAddressAndWeather(initialLat, initialLng, "서울특별시 (기본 위치)");
         } else {
-            if (currentAddressTextSpan) currentAddressTextSpan.textContent = '지도를 클릭하여 위치를 선택해주세요.';
-            if (weatherTodayP) weatherTodayP.textContent = '날씨 정보를 보려면 로그인 후 지도를 클릭하세요.';
-            if (weatherForecastP) weatherForecastP.textContent = '예보 정보를 보려면 로그인 후 지도를 클릭하세요.';
+             if (currentAddressTextSpan) currentAddressTextSpan.textContent = '지도를 클릭하여 위치를 선택해주세요.';
+             if (weatherTodayP) weatherTodayP.textContent = '날씨 정보를 보려면 로그인 후 지도를 클릭하세요.';
+             if (weatherForecastP) weatherForecastP.textContent = '예보 정보를 보려면 로그인 후 지도를 클릭하세요.';
         }
 
     } catch (e) {
@@ -339,35 +376,35 @@ function initDashboardMap() {
         if (mapElement) mapElement.innerHTML = "<p>지도 초기화 중 오류가 발생했습니다.</p>";
     }
 }
-window.initDashboardMap = initDashboardMap; // 전역 스코프에 노출
+// initDashboardMap을 전역 스코프에 노출시켜 Google Maps API 콜백이 찾을 수 있도록 함
+window.initDashboardMap = initDashboardMap; 
 
 // 페이지 로드 시 실행될 메인 로직
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('Dashboard DOMContentLoaded. 사용자 정보 로드 시도...');
-    await loadCurrentUserInfo(); // 전역 currentUser가 여기서 설정됨
+    
+    // 먼저 사용자 정보를 가져와서 currentUser를 설정
+    await loadCurrentUserInfo(); 
+
+    // 그 다음에 지도 초기화 함수가 호출되도록 하거나,
+    // initDashboardMap 함수 내부에서 currentUser 상태를 보고 동작하도록 함.
+    // Google Maps API는 비동기적으로 로드되고 initDashboardMap을 호출하므로,
+    // DOMContentLoaded 시점에서는 initDashboardMap이 이미 호출되었거나 곧 호출될 수 있음.
+    // initDashboardMap 내부에서 currentUser를 참조하므로, loadCurrentUserInfo가 먼저 완료되는 것이 좋음.
 
     if (currentUser) {
         console.log('사용자 인증됨. 즐겨찾기 로드.');
         loadAndDisplayFavorites();
-        // 기본 날씨는 initDashboardMap에서 currentUser 상태를 보고, 
-        // 또는 사용자가 지도를 클릭하거나 즐겨찾기를 선택할 때 로드.
-        // initDashboardMap이 Google API 콜백으로 나중에 호출될 수 있으므로,
-        // currentUser가 설정된 후 initDashboardMap이 실행될 때 기본 날씨를 표시하는 것이 좋음.
-        // 만약 initDashboardMap이 이미 호출되었다면 여기서 다시 기본 날씨 로드 호출 가능
-        if (map && geocoder) { // 지도가 이미 초기화 되었다면
-             updateAddressAndWeather(37.5665, 126.9780, "서울특별시 (기본 위치)");
-        }
+        // 만약 initDashboardMap이 DOMContentLoaded보다 늦게 호출되어 currentUser가 이미 설정된 상태라면
+        // initDashboardMap 내부의 currentUser 체크 로직이 기본 날씨를 표시할 것임.
+        // 만약 initDashboardMap이 먼저 호출되었다면, 여기서 다시 날씨를 로드할 필요는 없음.
     } else {
         console.log('사용자 인증 안됨. UI가 로그아웃 상태로 업데이트됩니다.');
-        // updateUIForLoggedOutState는 loadCurrentUserInfo의 catch 블록 또는
-        // fetchData의 401 처리에서 이미 호출되었을 수 있습니다.
     }
 
     if (addToFavoritesBtn) {
         addToFavoritesBtn.addEventListener('click', handleAddFavoriteClick);
-        // 초기 버튼 상태는 updateUIForLoggedInState/updateUIForLoggedOutState 및
-        // updateAddressAndWeather에서 관리
-        if(!currentUser || !currentMapSelection) { // 로그인 안했거나, 지도 선택 전이면 숨김
+        if(!currentUser || !currentMapSelection) { 
              addToFavoritesBtn.classList.add('hidden');
         }
     } else {

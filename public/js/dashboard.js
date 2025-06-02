@@ -158,5 +158,3 @@ async function updateLoginUI() {
         renderFavoritesList(null);
     }
 }
-
-// 이하 initDashboardMap, displayAddress, displayWeather, displayForecast 등은 기존과 동일하며 필요 시 추가 개선 가능

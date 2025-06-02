@@ -10,11 +10,9 @@ jobs:
     name: Build Docker Image and Push to ECR
     runs-on: ubuntu-latest
     outputs:
-      # 다음 작업에서 사용할 수 있도록 이미지 정보를 출력합니다.
-      # ECR 리포지토리 이름만 출력 (ECR 전체 경로는 너무 길어서)
       ecr_repository_name: my-node-app 
       image_tag_sha: ${{ github.sha }}
-      image_tag_latest: latest # 'latest' 태그를 명시적으로 출력
+      image_tag_latest: latest
 
     steps:
       - name: Checkout code
@@ -25,8 +23,6 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          # aws-region은 ECR 리포지토리가 있는 리전으로 고정하는 것이 좋습니다.
-          # 또는 secrets.AWS_ECR_REGION 같은 별도 Secret 사용 가능
           aws-region: ap-northeast-2 # 서울 ECR 기준
 
       - name: Login to Amazon ECR
@@ -36,8 +32,7 @@ jobs:
       - name: Build, tag, and push image to Amazon ECR
         env:
           ECR_REGISTRY_URL: ${{ steps.login-ecr.outputs.registry }}
-          # ECR_REPOSITORY_NAME을 Secret으로 관리하거나 여기서 직접 지정
-          ECR_REPOSITORY_NAME: my-node-app # outputs.ecr_repository_name과 일치
+          ECR_REPOSITORY_NAME: my-node-app 
           IMAGE_TAG_SHA: ${{ github.sha }}
           IMAGE_TAG_LATEST: latest        
         run: |
@@ -57,26 +52,26 @@ jobs:
     name: Deploy to EC2 (Seoul)
     runs-on: ubuntu-latest
     needs: build-and-push-to-ecr 
-    environment: seoul-production # GitHub Environment 사용 시 (선택 사항)
+    environment: seoul-production 
     
     steps:
       - name: Deploy to Seoul EC2 instance
-        uses: appleboy/ssh-action@v1.0.3 # 또는 사용하시는 최신 안정 버전
+        uses: appleboy/ssh-action@v1.0.3 
         with:
           host: ${{ secrets.EC2_HOST_SEOUL }}
           username: ${{ secrets.EC2_USERNAME }} 
-          key: ${{ secrets.EC2_SSH_KEY }}      
+          key: ${{ secrets.EC2_SSH_KEY }}
+          debug: true # ✨ SSH 연결 디버그 로그 활성화 ✨
           script: |
             echo "서울 EC2 배포 스크립트 시작 (`date`)"
-            set -e # 오류 발생 시 즉시 스크립트 중단
+            set -e 
 
-            # 변수 설정 (ECR 정보는 서울 ECR 기준)
             ECR_REGISTRY_PATH="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com"
             ECR_REPOSITORY_NAME="${{ needs.build-and-push-to-ecr.outputs.ecr_repository_name }}"
-            IMAGE_TAG_TO_DEPLOY="${{ needs.build-and-push-to-ecr.outputs.image_tag_latest }}" # 항상 'latest' 이미지 배포
+            IMAGE_TAG_TO_DEPLOY="${{ needs.build-and-push-to-ecr.outputs.image_tag_latest }}" 
             IMAGE_URI_TO_DEPLOY="${ECR_REGISTRY_PATH}/${ECR_REPOSITORY_NAME}:${IMAGE_TAG_TO_DEPLOY}"
             
-            CONTAINER_NAME="seoul-app-prod" # 서울 운영용 컨테이너 이름
+            CONTAINER_NAME="seoul-app-prod" 
 
             echo "배포 이미지: ${IMAGE_URI_TO_DEPLOY}"
             echo "컨테이너 이름: ${CONTAINER_NAME}"
@@ -121,7 +116,7 @@ jobs:
     name: Deploy to EC2 (Tokyo)
     runs-on: ubuntu-latest
     needs: build-and-push-to-ecr
-    environment: tokyo-production # GitHub Environment 사용 시 (선택 사항)
+    environment: tokyo-production 
 
     steps:
       - name: Deploy to Tokyo EC2 instance
@@ -130,17 +125,17 @@ jobs:
           host: ${{ secrets.EC2_HOST_TOKYO }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}      
+          debug: true # ✨ SSH 연결 디버그 로그 활성화 ✨
           script: |
             echo "도쿄 EC2 배포 스크립트 시작 (`date`)"
             set -e
 
-            # 변수 설정 (ECR 정보는 서울 ECR 기준)
-            ECR_REGISTRY_PATH="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com" # 이미지는 서울 ECR에서 가져옴
+            ECR_REGISTRY_PATH="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com" 
             ECR_REPOSITORY_NAME="${{ needs.build-and-push-to-ecr.outputs.ecr_repository_name }}"
-            IMAGE_TAG_TO_DEPLOY="${{ needs.build-and-push-to-ecr.outputs.image_tag_latest }}" # 'latest' 태그 사용
+            IMAGE_TAG_TO_DEPLOY="${{ needs.build-and-push-to-ecr.outputs.image_tag_latest }}" 
             IMAGE_URI_TO_DEPLOY="${ECR_REGISTRY_PATH}/${ECR_REPOSITORY_NAME}:${IMAGE_TAG_TO_DEPLOY}"
             
-            CONTAINER_NAME="tokyo-app-prod" # 도쿄 운영용 컨테이너 이름
+            CONTAINER_NAME="tokyo-app-prod" 
 
             echo "배포 이미지 (서울 ECR에서 가져옴): ${IMAGE_URI_TO_DEPLOY}"
             echo "컨테이너 이름: ${CONTAINER_NAME}"

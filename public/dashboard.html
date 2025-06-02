@@ -1,70 +1,244 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>나의 통합 대시보드</title>
-    <style>
-        body { font-family: sans-serif; margin: 0; }
-        .header { background-color: #f0f0f0; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
-        .header .favorites {}
-        .header .auth-links {}
-        .map-container { width: 100%; height: 60vh; background-color: #e0e0e0; }
-        #address-display { text-align: center; padding: 10px; font-weight: bold; }
-        .info-container { display: flex; flex-wrap: wrap; /* 모바일 화면에서 줄바꿈을 위해 */ padding: 10px; }
-        .info-container section { flex: 1; min-width: 280px; /* 최소 너비 지정 */ margin: 10px; padding: 15px; border: 1px solid #ccc; border-radius: 5px;}
-        
-        /* ✨ NEW: 즐겨찾기 섹션 스타일 (간단하게) ✨ */
-        #favorites-section { padding: 20px; margin-top: 10px; border-top: 2px solid #eee; }
-        #favorites-list .favorite-item { border-bottom: 1px dotted #ddd; padding: 8px 0; display: flex; justify-content: space-between; align-items: center; }
-        #favorites-list .favorite-item:last-child { border-bottom: none; }
-        #favorites-list .favorite-item span { cursor: pointer; }
-        #favorites-list .favorite-item span:hover { text-decoration: underline; color: blue; }
-        #favorites-list .favorite-item button { margin-left: 10px; padding: 3px 8px; font-size: 0.8em; cursor: pointer; background-color: #ffdddd; border: 1px solid #ffaaaa; border-radius: 3px;}
-        #favorites-list .favorite-item button:hover { background-color: #ffcccc; }
-        /* 간단한 CSS, 나중에 더 예쁘게 꾸밀 수 있습니다. */
-    </style>
-</head>
-<body>
-    <header class="header">
-        <div class="favorites">
-            <button id="btn-favorites" disabled>⭐ 즐겨찾기 (로그인 필요)</button>
-        </div>
-        <div class="auth-links">
-            <a href="/signup.html">회원가입</a> | <a href="/login.html">로그인</a>
-        </div>
-    </header>
+// dashboard.js 최종본
 
-    <main>
-        <div id="map-container" class="map-container">
-            </div>
+// ✅ 현재 로그인 상태 및 지도 정보 저장용 변수
+let currentUser = null;
+let currentMapCenter = { lat: 37.5665, lng: 126.9780 }; // 서울 시청
+let currentMapAddress = "주소를 찾을 수 없습니다.";
 
-        <div id="address-display">
-            주소 정보를 불러오는 중...
-        </div>
+// ✅ 즐겨찾기 목록 렌더링 함수
+function renderFavoritesList(favorites) {
+    const favoritesListDiv = document.getElementById('favorites-list');
+    if (!favoritesListDiv) return;
 
-        <div class="info-container">
-            <section id="weather-today" class="weather-today">
-                <h2>오늘 날씨</h2>
-                <p>날씨 정보를 보려면 지도에서 위치를 선택하거나 로그인하세요.</p>
-            </section>
-            <section id="weather-forecast" class="weather-forecast">
-                <h2>주간 예보 (내일/모레)</h2>
-                <p>예보 정보를 보려면 지도에서 위치를 선택하거나 로그인하세요.</p>
-            </section>
-        </div>
+    if (!currentUser) {
+        favoritesListDiv.innerHTML = '<p>로그인하시면 즐겨찾기 목록을 볼 수 있습니다.</p>';
+        return;
+    }
 
-        <section id="favorites-section">
-            <h2>⭐ 나의 즐겨찾기 목록</h2>
-            <div id="favorites-list">
-                <p>로그인하시면 즐겨찾기 목록을 볼 수 있습니다.</p>
-            </div>
-        </section>
-        </main>
+    if (!favorites || favorites.length === 0) {
+        favoritesListDiv.innerHTML = '<p>아직 추가된 즐겨찾기가 없습니다.</p>';
+        return;
+    }
 
-    <script src="/js/dashboard.js"></script>
-    <script async defer
-        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAsBiqFxUsjLjxFC9waxyzP2xjK-4c0YS8&callback=initDashboardMap&language=ko&region=KR">
-    </script>
-</body>
-</html>
+    let html = '<ul>';
+    favorites.forEach(fav => {
+        html += `
+            <li class="favorite-item" data-id="${fav.id}" data-lat="${fav.latitude}" data-lon="${fav.longitude}" data-name="${escape(fav.location_name)}">
+                <span class="favorite-name">${fav.location_name}</span>
+                <button class="delete-favorite-btn">삭제</button>
+            </li>`;
+    });
+    html += '</ul>';
+    favoritesListDiv.innerHTML = html;
+
+    // 클릭/삭제 이벤트 리스너 연결
+    document.querySelectorAll('.favorite-item .favorite-name').forEach(item => {
+        item.addEventListener('click', () => {
+            const parentLi = item.closest('.favorite-item');
+            const lat = parseFloat(parentLi.dataset.lat);
+            const lon = parseFloat(parentLi.dataset.lon);
+            const name = unescape(parentLi.dataset.name);
+
+            const addressElement = document.getElementById('address-display');
+            const weatherTodayElement = document.getElementById('weather-today');
+            const weatherForecastElement = document.getElementById('weather-forecast');
+
+            const newLocation = { lat, lng: lon };
+            if (window.dashboardMap && window.dashboardMarker) {
+                window.dashboardMap.setCenter(newLocation);
+                window.dashboardMarker.setPosition(newLocation);
+                currentMapCenter = newLocation;
+
+                displayAddress(newLocation, addressElement, (fetched) => currentMapAddress = fetched);
+                if (weatherTodayElement) displayWeather(lat, lon, weatherTodayElement);
+                if (weatherForecastElement) displayForecast(lat, lon, weatherForecastElement);
+            }
+        });
+    });
+
+    document.querySelectorAll('.favorite-item .delete-favorite-btn').forEach(button => {
+        button.addEventListener('click', async () => {
+            const parentLi = button.closest('.favorite-item');
+            const favoriteId = parentLi.dataset.id;
+            if (confirm(`'${unescape(parentLi.dataset.name)}' 즐겨찾기를 삭제하시겠습니까?`)) {
+                try {
+                    const res = await fetch(`/api/favorites/${favoriteId}`, { method: 'DELETE' });
+                    const result = await res.json();
+                    if (res.ok) {
+                        alert(result.message);
+                        loadAndDisplayFavorites();
+                    } else {
+                        alert(`삭제 실패: ${result.message}`);
+                    }
+                } catch (e) {
+                    alert('삭제 중 오류 발생');
+                }
+            }
+        });
+    });
+}
+
+// ✅ 즐겨찾기 목록 불러오기
+async function loadAndDisplayFavorites() {
+    if (!currentUser) return renderFavoritesList(null);
+    try {
+        const res = await fetch('/api/favorites');
+        if (!res.ok || !(res.headers.get('Content-Type') || '').includes('application/json'))
+            throw new Error('서버 응답 실패');
+        const favorites = await res.json();
+        renderFavoritesList(favorites);
+    } catch (e) {
+        const listDiv = document.getElementById('favorites-list');
+        if (listDiv) listDiv.innerHTML = '<p style="color:red;">목록을 불러오는 데 실패했습니다.</p>';
+    }
+}
+
+// ✅ 로그인 UI 업데이트
+async function updateLoginUI() {
+    const authLinksDiv = document.querySelector('.auth-links');
+    const favoritesButton = document.getElementById('btn-favorites');
+    try {
+        const res = await fetch('/api/current-user');
+        const contentType = res.headers.get("Content-Type") || "";
+        if (!contentType.includes("application/json")) throw new Error("잘못된 응답");
+
+        const data = await res.json();
+        if (data.loggedIn && data.user) {
+            currentUser = data.user;
+            if (authLinksDiv) authLinksDiv.innerHTML = `<span>${currentUser.email}님 환영!</span> | <a href="/logout">로그아웃</a>`;
+            if (favoritesButton) {
+                favoritesButton.disabled = false;
+                favoritesButton.textContent = '⭐ 현재 위치 즐겨찾기';
+            }
+            await loadAndDisplayFavorites();
+        } else throw new Error("로그인 안됨");
+    } catch (e) {
+        currentUser = null;
+        if (authLinksDiv) authLinksDiv.innerHTML = '<a href="/signup.html">회원가입</a> | <a href="/login.html">로그인</a>';
+        renderFavoritesList(null);
+    }
+}
+
+// ✅ 주소 정보 표시 함수
+function displayAddress(location, element, callback) {
+    if (!element) return;
+    const geocoder = new google.maps.Geocoder();
+    element.textContent = '주소 정보를 요청 중...';
+    geocoder.geocode({ location }, (results, status) => {
+        let address = '주소를 찾을 수 없습니다.';
+        if (status === 'OK' && results[0]) {
+            address = results[0].formatted_address;
+            element.textContent = `주소: ${address}`;
+        } else {
+            element.textContent = `Geocoder 실패: ${status}`;
+        }
+        if (callback) callback(address);
+    });
+}
+
+// ✅ 날씨 표시 함수
+async function displayWeather(lat, lon, element) {
+    if (!element) return;
+    element.innerHTML = '<p>날씨 정보를 불러오는 중...</p>';
+    try {
+        const res = await fetch(`/api/weather-by-coords?lat=${lat}&lon=${lon}`);
+        const data = await res.json();
+        const icon = `https://openweathermap.org/img/wn/${data.icon}@2x.png`;
+        element.innerHTML = `
+            <h2>오늘 날씨 (${data.cityName})</h2>
+            <img src="${icon}" alt="날씨"> ${data.description}<br>
+            <strong>온도:</strong> ${data.temperature}°C (체감: ${data.feels_like}°C)<br>
+            <strong>습도:</strong> ${data.humidity}%
+        `;
+    } catch (e) {
+        element.innerHTML = `<p style="color:red;">날씨 정보 실패</p>`;
+    }
+}
+
+// ✅ 예보 표시 함수
+async function displayForecast(lat, lon, element) {
+    if (!element) return;
+    element.innerHTML = '<p>예보 정보를 불러오는 중...</p>';
+    try {
+        const res = await fetch(`/api/weather-forecast?lat=${lat}&lon=${lon}`);
+        const data = await res.json();
+        let html = `<h2>주간 예보 (${data.cityName})</h2>`;
+        data.forecast.forEach(d => {
+            const icon = `https://openweathermap.org/img/wn/${d.icon}@2x.png`;
+            html += `<div><strong>${d.date}</strong><br><img src="${icon}" alt="날씨"> ${d.description}<br>최저: ${d.temp_min}°C / 최고: ${d.temp_max}°C</div><hr>`;
+        });
+        element.innerHTML = html;
+    } catch (e) {
+        element.innerHTML = `<p style="color:red;">예보 정보 실패</p>`;
+    }
+}
+
+// ✅ 지도 초기화 함수 (Google Maps API에서 callback)
+async function initDashboardMap() {
+    await updateLoginUI();
+    const mapEl = document.getElementById('map-container');
+    const addressEl = document.getElementById('address-display');
+    const weatherTodayEl = document.getElementById('weather-today');
+    const weatherForecastEl = document.getElementById('weather-forecast');
+    const favoritesButton = document.getElementById('btn-favorites');
+
+    window.dashboardMap = new google.maps.Map(mapEl, {
+        zoom: 15,
+        center: currentMapCenter,
+        clickableIcons: false
+    });
+    window.dashboardMarker = new google.maps.Marker({
+        position: currentMapCenter,
+        map: window.dashboardMap
+    });
+
+    if (addressEl) displayAddress(currentMapCenter, addressEl, a => currentMapAddress = a);
+    if (currentUser && weatherTodayEl) displayWeather(currentMapCenter.lat, currentMapCenter.lng, weatherTodayEl);
+    if (currentUser && weatherForecastEl) displayForecast(currentMapCenter.lat, currentMapCenter.lng, weatherForecastEl);
+
+    window.dashboardMap.addListener('click', (e) => {
+        currentMapCenter = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+        window.dashboardMarker.setPosition(currentMapCenter);
+        displayAddress(currentMapCenter, addressEl, a => currentMapAddress = a);
+        if (currentUser) {
+            if (weatherTodayEl) displayWeather(currentMapCenter.lat, currentMapCenter.lng, weatherTodayEl);
+            if (weatherForecastEl) displayForecast(currentMapCenter.lat, currentMapCenter.lng, weatherForecastEl);
+        }
+    });
+
+    if (favoritesButton) {
+        favoritesButton.addEventListener('click', async () => {
+            if (!currentUser) return alert("로그인이 필요합니다.");
+            if (!currentMapAddress || currentMapAddress.includes("요청") || currentMapAddress.includes("실패")) {
+                return alert("주소 정보가 불완전합니다.");
+            }
+            const favorite = {
+                location_name: currentMapAddress.replace(/^주소: /, ''),
+                latitude: currentMapCenter.lat,
+                longitude: currentMapCenter.lng
+            };
+            try {
+                const res = await fetch('/api/favorites', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(favorite)
+                });
+                const result = await res.json();
+                if (res.ok) {
+                    alert(result.message);
+                    loadAndDisplayFavorites();
+                } else {
+                    alert(`추가 실패: ${result.message}`);
+                }
+            } catch (e) {
+                alert('추가 중 오류 발생');
+            }
+        });
+    }
+}
+
+// ✅ Google Maps API에서 callback으로 인식되도록 전역에 등록
+window.initDashboardMap = initDashboardMap;
+
+// ✅ 초기 실행
+document.addEventListener('DOMContentLoaded', updateLoginUI);

@@ -1,22 +1,23 @@
 // 1. 필요한 모듈 가져오기
 const express = require('express');
-const axios = require('axios'); // 날씨/지도 API 등에서 사용
-require('dotenv').config();    // .env 파일 내용을 process.env로 로드 (파일 최상단 권장)
+const axios = require('axios');
+require('dotenv').config(); 
 const session = require('express-session');
-const bcrypt = require('bcrypt'); // 비밀번호 해싱에 직접 사용
+const bcrypt = require('bcrypt');
 const mysql = require('mysql2/promise');
-const path = require('path');   // 파일 경로 처리를 위해 필요
+const path = require('path');
 
 // 2. Express 앱 생성 및 포트 설정
 const app = express();
 const port = process.env.PORT || 3000;
+const IS_DEVELOPMENT = process.env.NODE_ENV !== 'production'; // 개발 환경 여부
 
-// 환경 변수 로드 확인 로그 (애플리케이션 시작 시 한 번만 실행)
+// 환경 변수 로드 확인 로그
 console.log("애플리케이션 시작 - .env 파일 로드");
 console.log("DB_HOST:", process.env.DB_HOST);
 console.log("DB_USER:", process.env.DB_USER);
 console.log("DB_PASSWORD (존재 여부만):", process.env.DB_PASSWORD ? "설정됨" : "설정 안됨");
-console.log("DB_NAME:", process.env.DB_NAME); // 예: master_db
+console.log("DB_NAME:", process.env.DB_NAME);
 console.log("SESSION_SECRET (존재 여부만):", process.env.SESSION_SECRET ? "설정됨" : "설정 안됨");
 console.log("OPENWEATHERMAP_API_KEY (존재 여부만):", process.env.OPENWEATHERMAP_API_KEY ? "설정됨" : "설정 안됨");
 console.log("Maps_API_KEY (존재 여부만):", process.env.Maps_API_KEY ? "설정됨" : "설정 안됨");
@@ -32,11 +33,11 @@ const dbPool = mysql.createPool({
   queueLimit: 0
 });
 
-// 데이터베이스 스키마 및 테이블 생성/확인 함수 (수정됨)
+// 데이터베이스 스키마 및 테이블 생성/확인 함수 (강화된 버전)
 async function initializeDatabase() {
   let connection;
   try {
-    connection = await dbPool.getConnection(); // DB 이름 없이 서버에 먼저 연결
+    connection = await dbPool.getConnection(); 
     console.log(`MySQL 서버 (${process.env.DB_HOST})에 성공적으로 연결되었습니다. (스키마/테이블 생성 시작)`);
 
     const dbNameToUse = process.env.DB_NAME;
@@ -45,17 +46,14 @@ async function initializeDatabase() {
       throw new Error("DB_NAME is not set in environment variables");
     }
 
-    // 1. 데이터베이스(스키마) 생성 (없으면)
     console.log(`'CREATE DATABASE IF NOT EXISTS \`${dbNameToUse}\`' 실행 시도...`);
     await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbNameToUse}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
     console.log(`🟢 '${dbNameToUse}' 데이터베이스 생성 또는 이미 존재함.`);
 
-    // 2. 생성한 데이터베이스 사용 (이 커넥션에 대해)
     console.log(`'USE \`${dbNameToUse}\`' 실행 시도...`);
     await connection.query(`USE \`${dbNameToUse}\`;`);
     console.log(`🟢 '${dbNameToUse}' 데이터베이스 사용 준비 완료 (테이블 생성 시작).`);
 
-    // 3. 테이블들 생성 (없으면)
     await connection.query(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTO_INCREMENT,
@@ -108,27 +106,23 @@ async function initializeDatabase() {
   }
 }
 
-// 애플리케이션 시작 시 DB 및 테이블 초기화 실행
 initializeDatabase();
 
-// API 키
 const OPENWEATHERMAP_API_KEY = process.env.OPENWEATHERMAP_API_KEY;
 const Maps_API_KEY = process.env.Maps_API_KEY;
 
-// 미들웨어 설정
 app.use(express.static(path.join(__dirname, 'public'))); 
 app.use(express.urlencoded({ extended: true })); 
 app.use(express.json()); 
 
 // 세션 미들웨어 설정
-// ✨ 참고: 프로덕션 환경에서는 MemoryStore 대신 Redis나 다른 세션 스토어를 사용하는 것이 좋습니다. ✨
-// MemoryStore는 개발용으로만 적합하며, 메모리 누수 및 확장성 문제가 있을 수 있습니다.
+// 참고: 프로덕션 환경에서는 MemoryStore 대신 Redis나 다른 세션 스토어를 사용하는 것이 좋습니다.
 app.use(session({
   secret: process.env.SESSION_SECRET || '6845ee0aea14277c760ae82669b03d5b65454f3515573c4bb84fd4f159df3a4c', 
   resave: false,
   saveUninitialized: false, 
   cookie: { 
-    secure: false, // 🚨 HTTP 환경 테스트를 위해 false! HTTPS 적용 후 true로 변경 필요 🚨
+    secure: false, // HTTP 환경 테스트를 위해 false. HTTPS 적용 후 true로 변경 필요!
     httpOnly: true, 
     maxAge: 24 * 60 * 60 * 1000 
   } 
@@ -136,7 +130,9 @@ app.use(session({
 
 // 인증 확인 미들웨어
 function ensureAuthenticated(req, res, next) {
-    console.log(`[DEBUG] ensureAuthenticated: Path: ${req.path}, Method: ${req.method}, Authenticated: ${req.session.isAuthenticated}, User: ${JSON.stringify(req.session.user)}, AcceptHeader: ${req.headers.accept}`);
+    if (IS_DEVELOPMENT) { // 개발 환경에서만 상세 로그 출력
+        console.log(`[DEBUG] ensureAuthenticated: Path: ${req.path}, Method: ${req.method}, Authenticated: ${req.session.isAuthenticated}, User: ${JSON.stringify(req.session.user)}, AcceptHeader: ${req.headers.accept}`);
+    }
     if (req.session.isAuthenticated && req.session.user) {
         return next(); 
     }
@@ -186,7 +182,7 @@ app.post('/signup', async (req, res) => {
         console.log(`새 사용자 가입됨 (DB ID: ${result.insertId}, email: ${email})`);
         res.redirect(`/login?signup=success&email=${encodeURIComponent(email)}`); 
     } catch (error) {
-        console.error("회원가입 처리 중 오류 발생:", error);
+        console.error("회원가입 처리 중 오류 발생:", error.message, error.stack);
         res.status(500).send(`회원가입 처리 중 오류가 발생했습니다: ${error.message} <a href="/signup">다시 시도</a>`);
     } finally {
         if (connection) connection.release();
@@ -218,7 +214,7 @@ app.post('/login', async (req, res) => {
             return res.status(401).send(`가입되지 않은 이메일이거나 비밀번호가 일치하지 않습니다. <a href="/login">다시 시도</a>`);
         }
     } catch (error) {
-        console.error("로그인 처리 중 오류 발생:", error);
+        console.error("로그인 처리 중 오류 발생:", error.message, error.stack);
         res.status(500).send(`로그인 중 오류가 발생했습니다: ${error.message} <a href="/login">다시 시도</a>`);
     } finally {
         if (connection) connection.release();
@@ -246,6 +242,7 @@ app.get('/api/current-user', ensureAuthenticated, (req, res) => {
     res.json({ loggedIn: true, user: req.session.user });
 });
 
+
 // --- 즐겨찾기 관련 API 엔드포인트들 ---
 app.post('/api/favorites', ensureAuthenticated, async (req, res) => {
   let connection; 
@@ -259,7 +256,7 @@ app.post('/api/favorites', ensureAuthenticated, async (req, res) => {
     }
     const sql = `INSERT INTO favorites (user_id, location_name, latitude, longitude) VALUES (?, ?, ?, ?)`;
     const params = [userId, location_name, latitude, longitude];
-    if (process.env.NODE_ENV !== 'production') { // 프로덕션이 아닐 때만 디버그 로그 출력
+    if (IS_DEVELOPMENT) {
         console.log('✨ [DEBUG] Executing SQL for POST /api/favorites:', sql, params);
     }
     const [result] = await connection.query(sql, params);
@@ -287,7 +284,7 @@ app.get('/api/favorites', ensureAuthenticated, async (req, res) => {
     const userId = req.session.user.id;
     const sql = `SELECT id, location_name, latitude, longitude, created_at FROM favorites WHERE user_id = ? ORDER BY created_at DESC`;
     const params = [userId];
-    if (process.env.NODE_ENV !== 'production') {
+    if (IS_DEVELOPMENT) {
         console.log('✨ [DEBUG] Executing SQL for GET /api/favorites:', sql, params);
     }
     const [rows] = await connection.query(sql, params);
@@ -309,7 +306,7 @@ app.delete('/api/favorites/:id', ensureAuthenticated, async (req, res) => {
     const userId = req.session.user.id; 
     const sql = `DELETE FROM favorites WHERE id = ? AND user_id = ?`;
     const params = [favoriteId, userId];
-    if (process.env.NODE_ENV !== 'production') {
+    if (IS_DEVELOPMENT) {
         console.log('✨ [DEBUG] Executing SQL for DELETE /api/favorites/:id:', sql, params);
     }
     const [result] = await connection.query(sql, params);
@@ -325,6 +322,7 @@ app.delete('/api/favorites/:id', ensureAuthenticated, async (req, res) => {
     if (connection) connection.release(); 
   }
 });
+
 
 // --- 새로운 날씨 구독 관련 API 엔드포인트 ---
 app.post('/api/weather-subscriptions', ensureAuthenticated, async (req, res) => {
@@ -347,7 +345,7 @@ app.post('/api/weather-subscriptions', ensureAuthenticated, async (req, res) => 
     `;
     const params = [userId, location_name, latitude, longitude, condition_type, condition_value || null];
 
-    if (process.env.NODE_ENV !== 'production') {
+    if (IS_DEVELOPMENT) {
         console.log('✨ [DEBUG] Executing SQL for POST /api/weather-subscriptions:', sql, params);
     }
     const [result] = await connection.query(sql, params);
@@ -375,6 +373,7 @@ app.post('/api/weather-subscriptions', ensureAuthenticated, async (req, res) => 
   }
 });
 
+
 // --- 루트 경로 ('/') 핸들러 - UI 정리된 최종 버전 ---
 app.get('/', (req, res) => {
   const loggedInUserEmail = req.session.user ? req.session.user.email : '방문자';
@@ -398,6 +397,7 @@ app.get('/', (req, res) => {
     <p>${authLinks}</p>
   `);
 });
+
 
 // --- 기존 날씨, 지도 API 라우트들 ---
 app.get('/weather', async (req, res) => {

@@ -1,4 +1,4 @@
-// ✅ 개선된 server.js 최종본
+// server.js
 
 // 1. 필요한 모듈 가져오기
 const express = require('express');
@@ -64,23 +64,38 @@ async function initializeDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
-    console.log("✅ DB 및 테이블 초기화 완료");
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS weather_subscriptions (
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        user_id INTEGER NOT NULL,
+        location_name VARCHAR(255) NOT NULL,
+        latitude DECIMAL(10, 8) NOT NULL,
+        longitude DECIMAL(11, 8) NOT NULL,
+        condition_type VARCHAR(50) NOT NULL,
+        condition_value VARCHAR(50) NULL,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    console.log("\u2705 DB 및 테이블 초기화 완료");
   } catch (error) {
-    console.error("❌ DB 초기화 중 오류:", error.message);
+    console.error("\u274C DB 초기화 중 오류:", error.message);
   } finally {
     if (connection) connection.release();
   }
 }
+
 initializeDatabase();
 
 const OPENWEATHERMAP_API_KEY = process.env.OPENWEATHERMAP_API_KEY;
+const Maps_API_KEY = process.env.Maps_API_KEY;
 
-// 📁 정적 파일 제공
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// 🔐 세션 설정
 app.use(session({
   secret: process.env.SESSION_SECRET || 'fallback_secret',
   resave: false,
@@ -92,9 +107,10 @@ app.use(session({
   }
 }));
 
-// ✅ 인증 미들웨어
 function ensureAuthenticated(req, res, next) {
-  if (req.session.isAuthenticated && req.session.user) return next();
+  if (req.session.isAuthenticated && req.session.user) {
+    return next();
+  }
   if (req.path.startsWith('/api/')) {
     res.status(401).json({ message: '로그인이 필요합니다.' });
   } else {
@@ -102,72 +118,29 @@ function ensureAuthenticated(req, res, next) {
   }
 }
 
-// ✅ HTML 라우트
+// HTML 라우트
 app.get('/signup', (req, res) => res.sendFile(path.join(__dirname, 'public', 'signup.html')));
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
-app.get('/dashboard.html', (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
+app.get('/dashboard.html', ensureAuthenticated, (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
+app.get('/subscribe', ensureAuthenticated, (req, res) => res.sendFile(path.join(__dirname, 'public', 'subscribe.html')));
 
-// ✅ 로그인 상태 JSON 응답
-app.get('/api/current-user', (req, res) => {
-  if (req.session && req.session.user) {
-    res.json({ loggedIn: true, user: req.session.user });
-  } else {
-    res.json({ loggedIn: false });
-  }
-});
-
-// ✅ 날씨 API 라우트
-app.get('/api/weather-by-coords', async (req, res) => {
-  const { lat, lon } = req.query;
-  try {
-    const result = await axios.get(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OPENWEATHERMAP_API_KEY}&units=metric&lang=kr`);
-    const weather = result.data;
-    res.json({
-      cityName: weather.name,
-      temperature: weather.main.temp,
-      feels_like: weather.main.feels_like,
-      humidity: weather.main.humidity,
-      description: weather.weather[0].description,
-      icon: weather.weather[0].icon
-    });
-  } catch (e) {
-    res.status(500).json({ message: '날씨 정보를 가져오는 중 오류 발생' });
-  }
-});
-
-app.get('/api/weather-forecast', async (req, res) => {
-  const { lat, lon } = req.query;
-  try {
-    const result = await axios.get(`https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${OPENWEATHERMAP_API_KEY}&units=metric&lang=kr`);
-    const forecastList = result.data.list;
-    const summarized = forecastList.filter((_, idx) => idx % 8 === 0).slice(0, 3).map(entry => ({
-      date: entry.dt_txt.split(' ')[0],
-      description: entry.weather[0].description,
-      temp_min: entry.main.temp_min,
-      temp_max: entry.main.temp_max,
-      icon: entry.weather[0].icon
-    }));
-    res.json({ cityName: result.data.city.name, forecast: summarized });
-  } catch (e) {
-    res.status(500).json({ message: '예보 정보를 가져오는 중 오류 발생' });
-  }
-});
-
-// ✅ 회원가입 & 로그인 API
+// 인증 라우트
 app.post('/signup', async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) return res.status(400).send('이메일과 비밀번호를 입력해주세요.');
+  if (!email || !password) return res.status(400).send('이메일과 비밀번호를 모두 입력해주세요. <a href="/signup">회원가입으로 돌아가기</a>');
   let connection;
   try {
     connection = await dbPool.getConnection();
     await connection.query(`USE \`${process.env.DB_NAME}\`;`);
     const [existing] = await connection.query("SELECT * FROM users WHERE email = ?", [email]);
-    if (existing.length > 0) return res.status(409).send('이미 가입된 이메일입니다.');
+    if (existing.length > 0) {
+      return res.status(409).send(`이미 가입된 이메일입니다. <a href="/login">로그인</a> 하시거나 <a href="/signup">다른 이메일로 가입</a>해주세요.`);
+    }
     const hash = await bcrypt.hash(password, 10);
     await connection.query("INSERT INTO users (email, password) VALUES (?, ?)", [email, hash]);
-    res.redirect('/login');
+    res.redirect(`/login?signup=success&email=${encodeURIComponent(email)}`);
   } catch (e) {
-    res.status(500).send(`회원가입 오류: ${e.message}`);
+    res.status(500).send(`회원가입 오류 발생: ${e.message} <a href="/signup">다시 시도</a>`);
   } finally {
     if (connection) connection.release();
   }
@@ -175,75 +148,33 @@ app.post('/signup', async (req, res) => {
 
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
+  if (!email || !password) return res.status(400).send('이메일과 비밀번호를 입력해주세요. <a href="/login">다시 시도</a>');
   let connection;
   try {
     connection = await dbPool.getConnection();
     await connection.query(`USE \`${process.env.DB_NAME}\`;`);
     const [users] = await connection.query("SELECT * FROM users WHERE email = ?", [email]);
     if (!users.length || !(await bcrypt.compare(password, users[0].password))) {
-      return res.status(401).send('이메일 또는 비밀번호가 틀립니다.');
+      return res.status(401).send('이메일 또는 비밀번호가 일치하지 않습니다. <a href="/login">다시 시도</a>');
     }
     req.session.user = { id: users[0].id, email: users[0].email };
     req.session.isAuthenticated = true;
     res.redirect('/dashboard.html');
   } catch (e) {
-    res.status(500).send(`로그인 오류: ${e.message}`);
+    res.status(500).send(`로그인 오류 발생: ${e.message} <a href="/login">다시 시도</a>`);
   } finally {
     if (connection) connection.release();
   }
 });
 
-// ✅ 즐겨찾기 API
-app.get('/api/favorites', ensureAuthenticated, async (req, res) => {
-  let connection;
-  try {
-    connection = await dbPool.getConnection();
-    await connection.query(`USE \`${process.env.DB_NAME}\`;`);
-    const [rows] = await connection.query("SELECT * FROM favorites WHERE user_id = ? ORDER BY created_at DESC", [req.session.user.id]);
-    res.json(rows);
-  } catch (e) {
-    res.status(500).json({ message: '즐겨찾기 로드 오류' });
-  } finally {
-    if (connection) connection.release();
-  }
-});
-
-app.post('/api/favorites', ensureAuthenticated, async (req, res) => {
-  const { location_name, latitude, longitude } = req.body;
-  let connection;
-  try {
-    connection = await dbPool.getConnection();
-    await connection.query(`USE \`${process.env.DB_NAME}\`;`);
-    await connection.query("INSERT INTO favorites (user_id, location_name, latitude, longitude) VALUES (?, ?, ?, ?)", [req.session.user.id, location_name, latitude, longitude]);
-    res.json({ message: '즐겨찾기에 추가되었습니다.' });
-  } catch (e) {
-    res.status(500).json({ message: '추가 중 오류 발생' });
-  } finally {
-    if (connection) connection.release();
-  }
-});
-
-app.delete('/api/favorites/:id', ensureAuthenticated, async (req, res) => {
-  const favoriteId = req.params.id;
-  let connection;
-  try {
-    connection = await dbPool.getConnection();
-    await connection.query(`USE \`${process.env.DB_NAME}\`;`);
-    await connection.query("DELETE FROM favorites WHERE id = ? AND user_id = ?", [favoriteId, req.session.user.id]);
-    res.json({ message: '즐겨찾기가 삭제되었습니다.' });
-  } catch (e) {
-    res.status(500).json({ message: '삭제 중 오류 발생' });
-  } finally {
-    if (connection) connection.release();
-  }
-});
-
-// ✅ 로그아웃
 app.get('/logout', (req, res) => {
-  req.session.destroy(() => res.redirect('/'));
+  if (req.session) {
+    req.session.destroy(() => res.redirect('/'));
+  } else {
+    res.redirect('/');
+  }
 });
 
-// ✅ 홈 페이지
 app.get('/', (req, res) => {
   const email = req.session.user ? req.session.user.email : '방문자';
   const authLinks = req.session.user ? `<a href="/logout">로그아웃</a>` : `<a href="/login">로그인</a> | <a href="/signup">회원가입</a>`;
@@ -256,7 +187,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// ✅ 서버 시작
+// 서버 시작
 app.listen(port, () => {
   console.log(`🌐 http://localhost:${port} 에서 서버 실행 중`);
 });

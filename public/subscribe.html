@@ -2,80 +2,387 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>날씨 정보 구독</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>날씨 알림 구독 설정</title>
     <style>
-        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 80vh; background-color: #f4f4f4; }
-        .container { background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); width: 350px; text-align: center; }
-        h1 { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 5px; text-align: left; }
-        input[type="email"] { width: 95%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; }
-        button { width: 100%; padding: 10px; background-color: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background-color: #138496; }
-        .message { margin-top:15px; }
-        .message a { color: #007bff; text-decoration: none; }
-        #response-message { margin-top: 15px; font-weight: bold; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; 
+            display: flex; 
+            flex-direction: column;
+            justify-content: center; 
+            align-items: center; 
+            min-height: 90vh; 
+            background-color: #f8f9fa; 
+            margin: 0; 
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .container { 
+            background-color: white; 
+            padding: 30px 40px; 
+            border-radius: 10px; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1); 
+            width: 100%;
+            max-width: 500px; 
+        }
+        h1 { 
+            text-align: center; 
+            margin-bottom: 25px; 
+            color: #007bff; 
+            font-size: 1.8em;
+        }
+        label { 
+            display: block; 
+            margin-top: 15px; 
+            margin-bottom: 8px; 
+            font-weight: 600; 
+            color: #495057; 
+        }
+        select,
+        input[type="text"], 
+        input[type="number"] { 
+            width: 100%; 
+            padding: 12px; 
+            margin-bottom: 15px; 
+            border: 1px solid #ced4da; 
+            border-radius: 5px; 
+            box-sizing: border-box;
+            font-size: 1em;
+            background-color: #fff; /* 배경색 명시 */
+        }
+        button[type="submit"] { 
+            width: 100%; 
+            padding: 12px; 
+            background-color: #28a745; 
+            color: white; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            font-size: 1.1em;
+            font-weight: 600;
+            transition: background-color 0.2s ease-in-out;
+            margin-top: 10px;
+        }
+        button[type="submit"]:hover { 
+            background-color: #218838; 
+        }
+        #message, #loadingMessage { 
+            margin-top: 20px; 
+            text-align: center; 
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: 500;
+        }
+        #message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        #message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .nav-links { text-align: center; margin-top: 25px; }
+        .nav-links a { color: #007bff; text-decoration: none; margin: 0 10px; }
+        .nav-links a:hover { text-decoration: underline; }
+        .hidden { display: none !important; } 
+        #currentSubscriptions ul { list-style-type: none; padding-left: 0; }
+        #currentSubscriptions li {
+            background-color: #e9ecef;
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9em;
+        }
+        #currentSubscriptions button.delete-subscription-btn { /* 클래스명으로 스타일 지정 */
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            font-size: 0.8em;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        #currentSubscriptions button.delete-subscription-btn:hover {
+            background-color: #c82333;
+        }
+        #noSubscriptionsMessage {
+            color: #6c757d;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>날씨 정보 이메일 구독 🌦️</h1>
-        <p>이메일을 등록하시면 매일 날씨 정보를 보내드립니다.</p>
-        <form id="subscribe-form">
-            <div>
-                <label for="email">이메일 주소:</label>
-                <input type="email" id="email" name="email" placeholder="이메일 입력" required>
-            </div>
-            <button type="submit">구독하기</button>
-        </form>
-        <div id="response-message"></div> <div class="message">
-            <p><a href="/">홈으로 돌아가기</a></p>
+        <h1>날씨 알림 구독 🌦️</h1>
+        <p id="loadingMessage">구독 정보를 불러오는 중...</p>
+
+        <div id="subscriptionContent" class="hidden">
+            <form id="subscribeForm">
+                <div>
+                    <label for="favoriteSelect">알림 받을 즐겨찾기 장소:</label>
+                    <select id="favoriteSelect" name="favorite_id" required>
+                        <option value="">-- 즐겨찾기 선택 --</option>
+                        <!-- 즐겨찾기 목록이 여기에 동적으로 추가됩니다 -->
+                    </select>
+                    <p id="noFavoritesMessage" class="hidden" style="color: #6c757d; font-style: italic;">
+                        먼저 <a href="/dashboard.html">대시보드</a>에서 즐겨찾기를 추가해주세요.
+                    </p>
+                </div>
+                <div>
+                    <label for="conditionType">알림 받을 날씨 조건:</label>
+                    <select id="conditionType" name="condition_type" required>
+                        <option value="">-- 조건 선택 --</option>
+                        <option value="rain">비 올 때</option>
+                        <option value="snow">눈 올 때</option>
+                        <option value="clear">맑을 때</option>
+                        <option value="clouds">흐릴 때 (구름 많음)</option>
+                        <option value="temp_gt">기온이 X도 초과</option>
+                        <option value="temp_lt">기온이 X도 미만</option>
+                    </select>
+                </div>
+                <div id="conditionValueDiv" class="hidden"> 
+                    <label for="conditionValue">조건 값 (예: 온도):</label>
+                    <input type="number" step="any" id="conditionValue" name="condition_value" placeholder="예: 30 (온도 입력)">
+                </div>
+                <button type="submit">이 조건으로 구독하기</button>
+            </form>
+            <div id="message"></div>
+
+            <hr style="margin: 30px 0;">
+            <h2>나의 현재 구독 목록</h2>
+            <ul id="currentSubscriptions">
+                <!-- 현재 구독 목록이 여기에 표시됩니다 -->
+            </ul>
+            <p id="noSubscriptionsMessage" class="hidden">아직 구독한 날씨 알림이 없습니다.</p>
+        </div>
+
+        <div class="nav-links">
+            <p><a href="/">홈으로</a> | <a href="/dashboard.html">내 대시보드</a></p>
         </div>
     </div>
 
     <script>
-        document.getElementById("subscribe-form").addEventListener("submit", async (e) => {
-            e.preventDefault(); // 기본 폼 제출 방지
+        const favoriteSelect = document.getElementById('favoriteSelect');
+        const noFavoritesMessageP = document.getElementById('noFavoritesMessage');
+        const conditionTypeSelect = document.getElementById('conditionType');
+        const conditionValueDiv = document.getElementById('conditionValueDiv');
+        const conditionValueInput = document.getElementById('conditionValue');
+        const subscribeForm = document.getElementById('subscribeForm');
+        const messageDiv = document.getElementById('message');
+        const loadingMessageP = document.getElementById('loadingMessage');
+        const subscriptionContentDiv = document.getElementById('subscriptionContent');
+        const currentSubscriptionsUl = document.getElementById('currentSubscriptions');
+        const noSubscriptionsMessageP = document.getElementById('noSubscriptionsMessage');
 
-            const emailInput = document.getElementById("email");
-            const email = emailInput.value;
-            const responseMessageDiv = document.getElementById("response-message");
-            responseMessageDiv.textContent = ""; // 이전 메시지 초기화
-
-            // 중요: <API_GATEWAY_URL> 부분은 실제 생성할 API Gateway 엔드포인트 URL로 변경해야 합니다.
-            const apiUrl = "https://7jn93wrich.execute-api.ap-southeast-2.amazonaws.com/sns-subscribe"; // 예시 URL (실제로는 /prod 스테이지나 사용하시는 스테이지명)
-
-            if (!email) {
-                responseMessageDiv.textContent = "이메일을 입력해주세요.";
-                responseMessageDiv.style.color = "red";
-                return;
-            }
-
+        // API 호출 공통 헬퍼 함수
+        async function fetchData(apiUrl, options = {}) {
             try {
-                responseMessageDiv.textContent = "구독 요청 중...";
-                responseMessageDiv.style.color = "blue";
-
-                const res = await fetch(apiUrl, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ email: email }), // 서버 Lambda가 받을 데이터 형식에 맞춤
-                });
-
-                const result = await res.json(); // Lambda 응답이 JSON 형태라고 가정
-
-                if (res.ok) {
-                    responseMessageDiv.textContent = result.message || "구독 요청이 성공적으로 처리되었습니다! 확인 이메일을 확인해주세요.";
-                    responseMessageDiv.style.color = "green";
-                    emailInput.value = ""; // 입력 필드 초기화
-                } else {
-                    responseMessageDiv.textContent = "구독 실패: " + (result.message || "서버에서 오류가 발생했습니다.");
-                    responseMessageDiv.style.color = "red";
+                const response = await fetch(apiUrl, options);
+                if (response.status === 401) {
+                    const data = await response.json().catch(() => ({ message: '로그인이 필요합니다.', redirectTo: '/login' }));
+                    console.warn('fetchData 401:', data.message);
+                    window.location.href = data.redirectTo || '/login';
+                    throw new Error(data.message || '로그인이 필요합니다.'); 
                 }
-            } catch (err) {
-                console.error("구독 요청 중 JavaScript 오류:", err);
-                responseMessageDiv.textContent = "오류 발생: " + err.message + ". 잠시 후 다시 시도해주세요.";
-                responseMessageDiv.style.color = "red";
+                if (!response.ok) {
+                    let errorData = { message: `서버 응답 오류: ${response.status}` };
+                    try { errorData = await response.json(); } 
+                    catch (e) { console.warn('오류 응답 JSON 파싱 실패', response.status, response.statusText); }
+                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error(`API 호출 (${apiUrl}) 실패:`, error.message);
+                throw error; 
             }
-        });
+        }
+
+        // 즐겨찾기 목록 불러와서 드롭다운 채우기
+        async function populateFavoritesDropdown() {
+            if (!favoriteSelect || !noFavoritesMessageP) return;
+            try {
+                const favorites = await fetchData('/api/favorites');
+                favoriteSelect.innerHTML = '<option value="">-- 즐겨찾기 선택 --</option>';
+                if (favorites && favorites.length > 0) {
+                    favorites.forEach(fav => {
+                        const option = document.createElement('option');
+                        option.value = fav.id;
+                        option.textContent = fav.location_name;
+                        favoriteSelect.appendChild(option);
+                    });
+                    noFavoritesMessageP.classList.add('hidden');
+                    if (subscribeForm) subscribeForm.style.display = 'block';
+                } else {
+                    noFavoritesMessageP.classList.remove('hidden');
+                    if (subscribeForm) subscribeForm.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('즐겨찾기 목록 로드 실패:', error);
+                if (messageDiv) {
+                    messageDiv.textContent = '오류: 즐겨찾기 목록을 불러오지 못했습니다. ' + error.message;
+                    messageDiv.className = 'error';
+                }
+                if (noFavoritesMessageP) noFavoritesMessageP.classList.remove('hidden');
+                if (subscribeForm) subscribeForm.style.display = 'none';
+            }
+        }
+
+        // 현재 날씨 구독 목록 불러와서 표시하기
+        async function loadAndDisplayCurrentSubscriptions() {
+            if (!currentSubscriptionsUl || !noSubscriptionsMessageP) return;
+            try {
+                const subscriptions = await fetchData('/api/weather-subscriptions');
+                currentSubscriptionsUl.innerHTML = ''; 
+                
+                if (subscriptions && subscriptions.length > 0) {
+                    noSubscriptionsMessageP.classList.add('hidden');
+                    subscriptions.forEach(sub => {
+                        const li = document.createElement('li');
+                        let conditionText = sub.condition_type;
+                        if (sub.condition_value) {
+                            conditionText += ` (${sub.condition_value})`;
+                        }
+                        li.innerHTML = `<span>${sub.location_name} - <span class="condition-text">${conditionText}</span></span>`;
+                        
+                        const deleteButton = document.createElement('button');
+                        deleteButton.className = 'delete-subscription-btn';
+                        deleteButton.textContent = '구독 취소';
+                        deleteButton.dataset.id = sub.id; // 삭제 시 사용할 구독 ID
+                        deleteButton.dataset.info = `${sub.location_name}의 '${conditionText}'`; // 확인 메시지용
+
+                        deleteButton.addEventListener('click', async function() {
+                            if (confirm(`'${this.dataset.info}' 구독을 취소하시겠습니까?`)) {
+                                try {
+                                    await fetchData(`/api/weather-subscriptions/${this.dataset.id}`, { method: 'DELETE' });
+                                    alert('구독이 취소되었습니다.');
+                                    loadAndDisplayCurrentSubscriptions(); 
+                                } catch (deleteError) {
+                                    alert(`구독 취소 실패: ${deleteError.message}`);
+                                }
+                            }
+                        });
+                        li.appendChild(deleteButton);
+                        currentSubscriptionsUl.appendChild(li);
+                    });
+                } else {
+                    noSubscriptionsMessageP.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('현재 구독 목록 로드 실패:', error);
+                if(currentSubscriptionsUl) currentSubscriptionsUl.innerHTML = '<li>구독 목록을 불러오는 데 실패했습니다.</li>';
+                if (noSubscriptionsMessageP) noSubscriptionsMessageP.classList.remove('hidden');
+            }
+        }
+
+        // 날씨 조건 선택 시 값 입력 필드 표시/숨김
+        if (conditionTypeSelect) {
+            conditionTypeSelect.addEventListener('change', function() {
+                if (this.value === 'temp_gt' || this.value === 'temp_lt') {
+                    if (conditionValueDiv) conditionValueDiv.classList.remove('hidden');
+                    if (conditionValueInput) {
+                        conditionValueInput.required = true;
+                        conditionValueInput.placeholder = (this.value === 'temp_gt') ? "예: 30 (이 온도보다 높을 때)" : "예: 0 (이 온도보다 낮을 때)";
+                    }
+                } else {
+                    if (conditionValueDiv) conditionValueDiv.classList.add('hidden');
+                    if (conditionValueInput) {
+                        conditionValueInput.required = false;
+                        conditionValueInput.value = ''; 
+                    }
+                }
+            });
+        }
+
+        // 구독 폼 제출 처리
+        if (subscribeForm) {
+            subscribeForm.addEventListener('submit', async function(event) {
+                event.preventDefault(); 
+                if (messageDiv) {
+                    messageDiv.textContent = ''; 
+                    messageDiv.className = '';   
+                }
+
+                const favoriteId = favoriteSelect ? favoriteSelect.value : '';
+                const conditionType = conditionTypeSelect ? conditionTypeSelect.value : '';
+                const conditionValue = conditionValueInput ? conditionValueInput.value : '';
+
+                if (!favoriteId) {
+                    if (messageDiv) { messageDiv.textContent = '오류: 알림 받을 즐겨찾기 장소를 선택해주세요.'; messageDiv.className = 'error'; }
+                    return;
+                }
+                if (!conditionType) {
+                    if (messageDiv) { messageDiv.textContent = '오류: 알림 받을 날씨 조건을 선택해주세요.'; messageDiv.className = 'error'; }
+                    return;
+                }
+                if ((conditionType === 'temp_gt' || conditionType === 'temp_lt') && !conditionValue) {
+                    if (messageDiv) { messageDiv.textContent = '오류: 선택된 날씨 조건에 대한 값을 입력해주세요.'; messageDiv.className = 'error'; }
+                    return;
+                }
+
+                const formData = {
+                    favorite_id: parseInt(favoriteId), 
+                    condition_type: conditionType,
+                };
+
+                if (conditionValueInput && conditionValueInput.required && conditionValue !== '') {
+                    formData.condition_value = conditionValue; 
+                }
+                
+                console.log('Submitting subscription data:', formData);
+
+                try {
+                    const result = await fetchData('/api/weather-subscriptions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(formData)
+                    });
+                    
+                    if (messageDiv) {
+                        messageDiv.textContent = '성공: ' + (result.message || "구독 정보가 저장되었습니다.");
+                        messageDiv.className = 'success'; 
+                    }
+                    this.reset(); 
+                    if(conditionValueDiv) conditionValueDiv.classList.add('hidden');
+                    loadAndDisplayCurrentSubscriptions(); 
+                    
+                } catch (error) { 
+                    console.error('구독 요청 실패:', error);
+                    if (messageDiv) {
+                        messageDiv.textContent = '오류: ' + error.message; 
+                        messageDiv.className = 'error';
+                    }
+                }
+            });
+        }
+
+        // 페이지 로드 시 초기화 작업
+        async function initializePage() {
+            if (!loadingMessageP || !subscriptionContentDiv) {
+                 console.error("initializePage: 필수 로딩/콘텐츠 DOM 요소를 찾을 수 없습니다.");
+                 return;
+            }
+            loadingMessageP.classList.remove('hidden');
+            subscriptionContentDiv.classList.add('hidden');
+            try {
+                await fetchData('/api/current-user'); // 로그인 상태 확인 및 401 시 리디렉션
+                                
+                await populateFavoritesDropdown();
+                await loadAndDisplayCurrentSubscriptions();
+                
+                loadingMessageP.classList.add('hidden');
+                subscriptionContentDiv.classList.remove('hidden');
+
+            } catch (error) {
+                console.error("페이지 초기화 실패 (initializePage catch):", error.message);
+                // fetchData에서 401 시 이미 리디렉션되었을 것이므로, 여기는 다른 오류에 대한 처리
+                if (loadingMessageP) {
+                    loadingMessageP.textContent = "페이지를 불러오는 중 오류가 발생했습니다. " + error.message;
+                    loadingMessageP.style.color = "red";
+                }
+                // subscriptionContentDiv는 계속 숨겨진 상태로 두거나, 오류 메시지 표시
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', initializePage);
     </script>
 </body>
 </html>
+

@@ -7,7 +7,7 @@ const bcrypt = require('bcrypt');
 const mysql = require('mysql2/promise');
 const path = require('path');
 const client = require('prom-client'); // Prometheus 클라이언트
-const { SNSClient, SubscribeCommand } = require("@aws-sdk/client-sns"); // AWS SNS SDK 추가
+const { SNSClient, SubscribeCommand } = require("@aws-sdk/client-sns"); // ✨ AWS SNS SDK 추가
 
 // 2. Express 앱 생성 및 포트 설정
 const app = express();
@@ -119,7 +119,7 @@ function ensureAuthenticated(req, res, next) {
     if (IS_DEVELOPMENT) console.log(`[DEBUG] Path: ${req.path}, Authenticated: ${req.session.isAuthenticated}`);
     if (req.session.isAuthenticated && req.session.user) return next(); 
     if (req.path.startsWith('/api/')) return res.status(401).json({ message: '로그인이 필요합니다.', redirectTo: '/login' });
-    res.redirect(`/login?message=${encodeURIComponent('로그인이 필요합니다.')}`); 
+    res.redirect(`/login.html?message=${encodeURIComponent('로그인이 필요합니다.')}`); 
 }
 
 // --- HTML 페이지 라우트 ---
@@ -128,45 +128,57 @@ app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'public', 'log
 app.get('/dashboard.html', ensureAuthenticated, (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
 app.get('/subscribe', ensureAuthenticated, (req, res) => res.sendFile(path.join(__dirname, 'public', 'subscribe.html')));
 
-// --- 인증 API 라우트 ---
+// --- 인증 API 라우트 (오류 시 리디렉션 방식) ---
 app.post('/signup', async (req, res) => {
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).send(`이메일과 비밀번호를 모두 입력해주세요.`);
+    if (!email || !password) {
+        return res.redirect(`/signup.html?error=${encodeURIComponent('이메일과 비밀번호를 모두 입력해주세요.')}`);
+    }
     let connection;
     try {
         connection = await dbPool.getConnection();
         await connection.query(`USE \`${process.env.DB_NAME}\``);
         const [existingUsers] = await connection.query("SELECT * FROM users WHERE email = ?", [email]);
-        if (existingUsers.length > 0) return res.status(409).send(`이미 가입된 이메일입니다.`);
+        if (existingUsers.length > 0) {
+            return res.redirect(`/signup.html?error=${encodeURIComponent('이미 가입된 이메일입니다.')}`);
+        }
         const hashedPassword = await bcrypt.hash(password, 10);
         await connection.query("INSERT INTO users (email, password) VALUES (?, ?)", [email, hashedPassword]);
         console.log(`새 사용자 가입됨: ${email}`);
 
         // SNS 이메일 구독 추가
         if (process.env.SNS_TOPIC_ARN) {
-            const snsParams = { Protocol: "email", TopicArn: process.env.SNS_TOPIC_ARN, Endpoint: email };
+            const snsParams = {
+                Protocol: "email",
+                TopicArn: process.env.SNS_TOPIC_ARN,
+                Endpoint: email
+            };
             await snsClient.send(new SubscribeCommand(snsParams));
             console.log("📧 SNS 구독 요청 완료:", email);
         } else {
             console.warn("🟡 SNS_TOPIC_ARN 환경 변수가 설정되지 않아, SNS 구독 요청을 건너뜁니다.");
         }
 
-        res.redirect(`/login?signup=success&email=${encodeURIComponent(email)}`); 
+        res.redirect(`/login.html?signup=success&email=${encodeURIComponent(email)}`); 
     } catch (error) {
         console.error("회원가입 오류:", error.message, error.stack);
-        res.status(500).send(`회원가입 처리 중 오류가 발생했습니다.`);
+        res.redirect(`/signup.html?error=${encodeURIComponent('서버 오류가 발생했습니다.')}`);
     } finally { if (connection) connection.release(); }
 });
 
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).send(`이메일과 비밀번호를 모두 입력해주세요.`);
+    if (!email || !password) {
+        return res.redirect(`/login.html?error=${encodeURIComponent('이메일과 비밀번호를 모두 입력해주세요.')}`);
+    }
     let connection;
     try {
         connection = await dbPool.getConnection();
         await connection.query(`USE \`${process.env.DB_NAME}\``);
         const [users] = await connection.query("SELECT * FROM users WHERE email = ?", [email]);
-        if (users.length === 0) return res.status(401).send(`이메일 또는 비밀번호가 일치하지 않습니다.`);
+        if (users.length === 0) {
+            return res.redirect(`/login.html?error=${encodeURIComponent('이메일 또는 비밀번호가 일치하지 않습니다.')}`);
+        }
         const user = users[0];
         const isMatch = await bcrypt.compare(password, user.password);
         if (isMatch) {
@@ -175,11 +187,11 @@ app.post('/login', async (req, res) => {
             console.log('사용자 로그인 성공:', req.session.user);
             res.redirect('/dashboard.html'); 
         } else {
-            return res.status(401).send(`이메일 또는 비밀번호가 일치하지 않습니다.`);
+            return res.redirect(`/login.html?error=${encodeURIComponent('이메일 또는 비밀번호가 일치하지 않습니다.')}`);
         }
     } catch (error) {
         console.error("로그인 오류:", error.message, error.stack);
-        res.status(500).send(`로그인 중 오류 발생`);
+        res.redirect(`/login.html?error=${encodeURIComponent('서버 오류가 발생했습니다.')}`);
     } finally { if (connection) connection.release(); }
 });
 

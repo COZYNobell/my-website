@@ -1,99 +1,100 @@
-name: Build and Deploy Docker Image to Multi-Region EC2
+name: Provision and Deploy to EC2
 
 on:
   push:
     branches:
-      - main # main 브랜치에 푸시될 때 실행
+      - main
+  workflow_dispatch:
 
 jobs:
-  build-and-push-to-ecr:
-    name: Build Docker Image and Push to ECR
+  build:
+    name: Build Docker Image
     runs-on: ubuntu-latest
     outputs:
-      ecr_repository_name: my-node-app 
-      image_tag_sha: ${{ github.sha }}
-      image_tag_latest: latest
-
+      image_uri: ${{ steps.build-image.outputs.image }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-northeast-2 # 서울 ECR 기준
-
+          aws-region: ap-northeast-2 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build, tag, and push image to Amazon ECR
+      - name: Build and push Docker image
+        id: build-image
         env:
-          ECR_REGISTRY_URL: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY_NAME: my-node-app 
-          IMAGE_TAG_SHA: ${{ github.sha }}
-          IMAGE_TAG_LATEST: latest        
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: my-node-app
+          IMAGE_TAG: latest
         run: |
-          echo "ECR Registry URL: $ECR_REGISTRY_URL"
-          echo "ECR Repository Name: $ECR_REPOSITORY_NAME"
-          
-          docker build -t $ECR_REGISTRY_URL/$ECR_REPOSITORY_NAME:$IMAGE_TAG_SHA -t $ECR_REGISTRY_URL/$ECR_REPOSITORY_NAME:$IMAGE_TAG_LATEST .
-          
-          echo "Pushing SHA tagged image: $ECR_REGISTRY_URL/$ECR_REPOSITORY_NAME:$IMAGE_TAG_SHA"
-          docker push $ECR_REGISTRY_URL/$ECR_REPOSITORY_NAME:$IMAGE_TAG_SHA
-          
-          echo "Pushing latest tagged image: $ECR_REGISTRY_URL/$ECR_REPOSITORY_NAME:$IMAGE_TAG_LATEST"
-          docker push $ECR_REGISTRY_URL/$ECR_REPOSITORY_NAME:$IMAGE_TAG_LATEST
-          echo "All images pushed to ECR."
+          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker build -t $IMAGE_URI .
+          docker push $IMAGE_URI
+          echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
 
-  deploy-to-ec2-seoul:
-    name: Deploy to EC2 (Seoul)
+  provision-and-deploy-seoul:
+    name: Provision and Deploy (Seoul)
     runs-on: ubuntu-latest
-    needs: build-and-push-to-ecr 
-    environment: seoul-production 
+    needs: build
     
     steps:
-      - name: Deploy to Seoul EC2 instance
-        uses: appleboy/ssh-action@v1.0.3 
+      - name: Checkout repository code
+        uses: actions/checkout@v4
+
+      - name: Install Ansible
+        run: sudo apt-get update && sudo apt-get install -y ansible
+
+      - name: Setup Master SSH Key
+        # Secret에 저장된 개인키를 임시 파일로 만들어 권한을 설정합니다.
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_DEPLOY_KEY }}" > ~/.ssh/master_deploy_key
+          chmod 600 ~/.ssh/master_deploy_key
+          echo "Master Deploy Key configured."
+
+      - name: Run Ansible Playbooks to Setup EC2s
+        # --private-key 옵션으로 방금 만든 키 파일을 명확히 지정하여 실행합니다.
+        run: |
+          echo "Running Ansible playbooks..."
+          ansible-playbook \
+            -i "ansible/inventory.ini" \
+            --private-key ~/.ssh/master_deploy_key \
+            -u ${{ secrets.EC2_USERNAME }} \
+            ansible/setup-ec2-base.yaml \
+            --ssh-common-args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null' \
+            --verbose
+            
+          ansible-playbook \
+            -i "ansible/inventory.ini" \
+            --private-key ~/.ssh/master_deploy_key \
+            -u ${{ secrets.EC2_USERNAME }} \
+            ansible/setup-monitoring.yaml \
+            --ssh-common-args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null' \
+            --verbose
+
+      - name: Deploy Application Container to Seoul EC2
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST_SEOUL }}
-          username: ${{ secrets.EC2_USERNAME }} 
-          key: ${{ secrets.EC2_SSH_KEY }}
-          debug: true # ✨ SSH 연결 디버그 로그 활성화 ✨
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_DEPLOY_KEY }} # 프로비저닝과 동일한 마스터 키 사용
           script: |
-            echo "서울 EC2 배포 스크립트 시작 (`date`)"
-            set -e 
+            echo "Deploying application container to Seoul EC2..."
+            CONTAINER_NAME="seoul-app-prod"
+            IMAGE_URI="${{ needs.build.outputs.image_uri }}"
 
-            ECR_REGISTRY_PATH="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com"
-            ECR_REPOSITORY_NAME="${{ needs.build-and-push-to-ecr.outputs.ecr_repository_name }}"
-            IMAGE_TAG_TO_DEPLOY="${{ needs.build-and-push-to-ecr.outputs.image_tag_latest }}" 
-            IMAGE_URI_TO_DEPLOY="${ECR_REGISTRY_PATH}/${ECR_REPOSITORY_NAME}:${IMAGE_TAG_TO_DEPLOY}"
+            aws ecr get-login-password --region ap-northeast-2 | sudo docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
             
-            CONTAINER_NAME="seoul-app-prod" 
-
-            echo "배포 이미지: ${IMAGE_URI_TO_DEPLOY}"
-            echo "컨테이너 이름: ${CONTAINER_NAME}"
-
-            echo "ECR 로그인 (ap-northeast-2)..."
-            aws ecr get-login-password --region ap-northeast-2 | sudo docker login --username AWS --password-stdin ${ECR_REGISTRY_PATH}
-            echo "ECR 로그인 성공."
-
-            echo "최신 이미지 Pull: ${IMAGE_URI_TO_DEPLOY}"
-            sudo docker pull ${IMAGE_URI_TO_DEPLOY}
-            echo "이미지 Pull 완료."
-
-            echo "기존 '${CONTAINER_NAME}' 컨테이너 중지/삭제..."
-            if [ "$(sudo docker ps -q -f name=^/${CONTAINER_NAME}$)" ]; then sudo docker stop ${CONTAINER_NAME}; fi
-            if [ "$(sudo docker ps -aq -f name=^/${CONTAINER_NAME}$)" ]; then sudo docker rm ${CONTAINER_NAME}; fi
-            echo "기존 컨테이너 처리 완료."
-
-            echo "새 컨테이너 실행 (서울 RDS 정보 사용)..."
-            sudo docker run -d \
-              -p 80:3000 \
-              --name ${CONTAINER_NAME} \
-              --restart always \
+            sudo docker pull $IMAGE_URI
+            
+            if [ "$(sudo docker ps -q -f name=$CONTAINER_NAME)" ]; then sudo docker stop $CONTAINER_NAME; fi
+            if [ "$(sudo docker ps -aq -f name=$CONTAINER_NAME)" ]; then sudo docker rm $CONTAINER_NAME; fi
+            
+            sudo docker run -d -p 80:3000 --name $CONTAINER_NAME --restart always \
               -e NODE_ENV="production" \
               -e DB_HOST="${{ secrets.DB_HOST_SEOUL }}" \
               -e DB_USER="${{ secrets.DB_USER_SEOUL }}" \
@@ -102,76 +103,7 @@ jobs:
               -e SESSION_SECRET="${{ secrets.SESSION_SECRET }}" \
               -e OPENWEATHERMAP_API_KEY="${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }}" \
               -e Maps_API_KEY="${{ secrets.MAPS_API_KEY_SECRET }}" \
-              ${IMAGE_URI_TO_DEPLOY}
-            echo "새 컨테이너 실행 요청 완료."
+              $IMAGE_URI
             
-            sudo docker image prune -af || true 
-            sleep 10 
-            echo "✅ 서울 EC2 배포 완료! 실행 중인 컨테이너:"
-            sudo docker ps -f name=${CONTAINER_NAME}
-            echo "최근 로그 (50줄):"
-            sudo docker logs --tail 50 ${CONTAINER_NAME}
+            echo "✅ Seoul EC2 deployment complete!"
 
-  deploy-to-ec2-tokyo:
-    name: Deploy to EC2 (Tokyo)
-    runs-on: ubuntu-latest
-    needs: build-and-push-to-ecr
-    environment: tokyo-production 
-
-    steps:
-      - name: Deploy to Tokyo EC2 instance
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST_TOKYO }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}      
-          debug: true # ✨ SSH 연결 디버그 로그 활성화 ✨
-          script: |
-            echo "도쿄 EC2 배포 스크립트 시작 (`date`)"
-            set -e
-
-            ECR_REGISTRY_PATH="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com" 
-            ECR_REPOSITORY_NAME="${{ needs.build-and-push-to-ecr.outputs.ecr_repository_name }}"
-            IMAGE_TAG_TO_DEPLOY="${{ needs.build-and-push-to-ecr.outputs.image_tag_latest }}" 
-            IMAGE_URI_TO_DEPLOY="${ECR_REGISTRY_PATH}/${ECR_REPOSITORY_NAME}:${IMAGE_TAG_TO_DEPLOY}"
-            
-            CONTAINER_NAME="tokyo-app-prod" 
-
-            echo "배포 이미지 (서울 ECR에서 가져옴): ${IMAGE_URI_TO_DEPLOY}"
-            echo "컨테이너 이름: ${CONTAINER_NAME}"
-
-            echo "ECR 로그인 (ap-northeast-2)..."
-            aws ecr get-login-password --region ap-northeast-2 | sudo docker login --username AWS --password-stdin ${ECR_REGISTRY_PATH}
-            echo "ECR 로그인 성공."
-
-            echo "최신 이미지 Pull: ${IMAGE_URI_TO_DEPLOY}"
-            sudo docker pull ${IMAGE_URI_TO_DEPLOY}
-            echo "이미지 Pull 완료."
-
-            echo "기존 '${CONTAINER_NAME}' 컨테이너 중지/삭제..."
-            if [ "$(sudo docker ps -q -f name=^/${CONTAINER_NAME}$)" ]; then sudo docker stop ${CONTAINER_NAME}; fi
-            if [ "$(sudo docker ps -aq -f name=^/${CONTAINER_NAME}$)" ]; then sudo docker rm ${CONTAINER_NAME}; fi
-            echo "기존 컨테이너 처리 완료."
-
-            echo "새 컨테이너 실행 (도쿄 RDS 정보 사용)..."
-            sudo docker run -d \
-              -p 80:3000 \
-              --name ${CONTAINER_NAME} \
-              --restart always \
-              -e NODE_ENV="production" \
-              -e DB_HOST="${{ secrets.DB_HOST_TOKYO }}" \
-              -e DB_USER="${{ secrets.DB_USER_TOKYO }}" \
-              -e DB_PASSWORD="${{ secrets.DB_PASSWORD_TOKYO }}" \
-              -e DB_NAME="${{ secrets.DB_NAME_TOKYO }}" \
-              -e SESSION_SECRET="${{ secrets.SESSION_SECRET }}" \
-              -e OPENWEATHERMAP_API_KEY="${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }}" \
-              -e Maps_API_KEY="${{ secrets.MAPS_API_KEY_SECRET }}" \
-              ${IMAGE_URI_TO_DEPLOY}
-            echo "새 컨테이너 실행 요청 완료."
-
-            sudo docker image prune -af || true
-            sleep 10
-            echo "✅ 도쿄 EC2 배포 완료! 실행 중인 컨테이너:"
-            sudo docker ps -f name=${CONTAINER_NAME}
-            echo "최근 로그 (50줄):"
-            sudo docker logs --tail 50 ${CONTAINER_NAME}

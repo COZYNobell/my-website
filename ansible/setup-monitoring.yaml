@@ -1,0 +1,132 @@
+---
+# 플레이 1: 모든 대상 서버에 Node Exporter 설치하기
+- name: Deploy Prometheus Node Exporter to all target servers
+  hosts: all
+  become: yes
+  
+  tasks:
+    - name: Run Node Exporter container
+      ansible.builtin.docker_container:
+        name: node_exporter
+        image: prom/node-exporter:v1.8.1
+        state: started
+        restart_policy: unless-stopped
+        network_mode: host
+        pid_mode: host
+        command:
+          - '--path.procfs=/host/proc'
+          - '--path.sysfs=/host/sys'
+          - '--path.rootfs=/rootfs'
+          - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc|run/secrets/kubernetes.io)($$|/)'
+        volumes:
+          - /proc:/host/proc:ro
+          - /sys:/host/sys:ro
+          - /:/rootfs:ro
+      tags: node-exporter
+
+# 플레이 2: 모니터링 서버에 Prometheus 및 Grafana 배포
+- name: Deploy Monitoring Stack (Prometheus & Grafana)
+  hosts: monitoring_server
+  become: yes
+
+  vars_files:
+    - vars/main.yml
+
+  tasks:
+    - name: Create a dedicated docker network for monitoring
+      community.docker.docker_network:
+        name: monitoring-net
+        state: present
+      tags: [docker, network]
+
+    - name: Create directories for Prometheus and Grafana configurations
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - /etc/prometheus
+        - /etc/grafana/provisioning/datasources
+        - /etc/grafana/provisioning/dashboards
+      tags: [config, directory]
+
+    - name: Copy Prometheus configuration file
+      ansible.builtin.copy:
+        src: ../prometheus/prometheus.yml
+        dest: /etc/prometheus/prometheus.yml
+        mode: '0644'
+      notify: restart prometheus
+      tags: [config, prometheus]
+
+    - name: Copy Grafana provisioning files
+      ansible.builtin.copy:
+        src: ../ansible/provisioning/
+        dest: /etc/grafana/provisioning/
+        owner: '472'
+        group: '472'
+        mode: '0644'
+      notify: restart grafana
+      tags: [config, grafana]
+
+    - name: Run Prometheus container on the monitoring network
+      ansible.builtin.docker_container:
+        name: prometheus
+        image: prom/prometheus:v2.53.0
+        state: started
+        restart_policy: unless-stopped
+        ports:
+          - "9090:9090"
+        networks:
+          - name: monitoring-net
+        volumes:
+          - /etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+          - prometheus_data:/prometheus
+        command:
+          - '--config.file=/etc/prometheus/prometheus.yml'
+          - '--storage.tsdb.path=/prometheus'
+      tags: prometheus
+
+    - name: Run Grafana container on the monitoring network
+      ansible.builtin.docker_container:
+        name: grafana
+        image: grafana/grafana:11.0.0
+        state: started
+        restart_policy: unless-stopped
+        ports:
+          - "3000:3000"
+        networks:
+          - name: monitoring-net
+        volumes:
+          - grafana_data:/var/lib/grafana
+          - /etc/grafana/provisioning:/etc/grafana/provisioning:ro
+        env:
+          GF_SECURITY_ADMIN_USER: "{{ grafana_admin_user | default('admin') }}"
+          GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password | default('admin') }}"
+      tags: grafana
+
+  handlers:
+    - name: restart prometheus
+      ansible.builtin.docker_container:
+        name: prometheus
+        state: started
+        restart: yes
+    - name: restart grafana
+      ansible.builtin.docker_container:
+        name: grafana
+        state: started
+        restart: yes
+
+# 플레이 3: Docker 볼륨이 존재하는지 확인
+- name: Ensure Docker volumes exist for persistence
+  hosts: monitoring_server
+  become: yes
+  tasks:
+    - name: Create Prometheus data volume if not exists
+      community.docker.docker_volume:
+        name: prometheus_data
+        state: present
+    - name: Create Grafana data volume if not exists
+      community.docker.docker_volume:
+        name: grafana_data
+        state: present
+

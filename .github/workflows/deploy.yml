@@ -1,4 +1,4 @@
-name: Build and Deploy Application to EC2
+name: Provision and Deploy to EC2
 
 on:
   push:
@@ -36,24 +36,57 @@ jobs:
           docker push $IMAGE_URI
           echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
 
-  deploy-to-seoul:
-    name: Deploy App to EC2 (Seoul)
+  provision-and-deploy:
+    name: Provision and Deploy to Servers
     runs-on: ubuntu-latest
     needs: build
     
     steps:
-      - name: Deploy Application Container to Seoul EC2
+      - name: Checkout repository code
+        uses: actions/checkout@v4
+
+      - name: Install Ansible
+        run: sudo apt-get update && sudo apt-get install -y ansible
+
+      - name: Setup Master SSH Key
+        # Secret에 저장된 개인키를 임시 파일로 만들어 권한을 설정합니다.
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_DEPLOY_KEY }}" > ~/.ssh/master_deploy_key
+          chmod 600 ~/.ssh/master_deploy_key
+          echo "Master Deploy Key configured."
+
+      - name: Run Ansible Playbooks to Setup EC2s
+        # --private-key 옵션으로 방금 만든 키 파일을 명확히 지정하여 실행합니다.
+        run: |
+          echo "Running Ansible playbooks..."
+          ansible-playbook \
+            -i "ansible/inventory.ini" \
+            --private-key ~/.ssh/master_deploy_key \
+            -u ${{ secrets.EC2_USERNAME }} \
+            ansible/setup-ec2-base.yaml \
+            --ssh-common-args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null' \
+            --verbose
+            
+          ansible-playbook \
+            -i "ansible/inventory.ini" \
+            --private-key ~/.ssh/master_deploy_key \
+            -u ${{ secrets.EC2_USERNAME }} \
+            ansible/setup-monitoring.yaml \
+            --ssh-common-args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null' \
+            --verbose
+
+      - name: Deploy Application Container to App Server
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST_SEOUL }}
           username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_DEPLOY_KEY }} # ✨ 우리가 정리한 단일 마스터 배포 키 사용! ✨
+          key: ${{ secrets.EC2_DEPLOY_KEY }} # 프로비저닝과 동일한 마스터 키 사용
           script: |
-            echo "Deploying application container to Seoul EC2..."
+            echo "Deploying application container to App Server (Seoul)..."
             CONTAINER_NAME="seoul-app-prod"
             IMAGE_URI="${{ needs.build.outputs.image_uri }}"
 
-            # EC2에 Docker가 설치되어 있다고 가정합니다.
             aws ecr get-login-password --region ap-northeast-2 | sudo docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
             
             sudo docker pull $IMAGE_URI
@@ -73,5 +106,4 @@ jobs:
               $IMAGE_URI
             
             echo "✅ Seoul EC2 deployment complete!"
-            sudo docker logs --tail 50 $CONTAINER_NAME
 

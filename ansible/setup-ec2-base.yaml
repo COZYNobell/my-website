@@ -1,0 +1,79 @@
+---
+- name: Setup Base EC2 Environment for Application Deployment
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  # 이 플레이북은 ansible/vars/main.yml 파일을 읽어 변수를 사용합니다.
+  vars_files:
+    - vars/main.yml
+
+  tasks:
+    - name: Update all system packages to the latest version
+      ansible.builtin.dnf:
+        name: '*'
+        state: latest
+        update_cache: yes
+      when: ansible_distribution == 'Amazon'
+      tags: [packages, update]
+
+    - name: Install essential packages (git, wget, tar)
+      ansible.builtin.dnf:
+        name:
+          - git
+          - wget
+          - tar
+        state: present
+      when: ansible_distribution == 'Amazon'
+      tags: [packages, essentials]
+
+    - name: Install Docker
+      ansible.builtin.dnf:
+        name: docker
+        state: present
+      when: ansible_distribution == 'Amazon'
+      tags: [packages, docker]
+
+    - name: Start and enable Docker service
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: yes
+      tags: [services, docker]
+
+    - name: Add target user to docker group
+      ansible.builtin.user:
+        name: "{{ target_ssh_user }}"
+        groups: docker
+        append: yes
+      tags: [users, docker]
+
+    - name: Ensure .ssh directory exists for target user
+      ansible.builtin.file:
+        path: "/home/{{ target_ssh_user }}/.ssh"
+        state: directory
+        owner: "{{ target_ssh_user }}"
+        group: "{{ target_ssh_user }}"
+        mode: '0700'
+      tags: [ssh, config]
+
+    - name: Add/Update GitHub Actions deploy public key
+      ansible.builtin.authorized_key:
+        user: "{{ target_ssh_user }}"
+        state: present
+        key: "{{ deploy_ssh_public_key }}"
+        path: "/home/{{ target_ssh_user }}/.ssh/authorized_keys"
+      when: deploy_ssh_public_key is defined and deploy_ssh_public_key | length > 10
+      tags: [ssh, config]
+    
+    - name: Install MariaDB Client (as MySQL Client compatible)
+      ansible.builtin.dnf:
+        name: mariadb105
+        state: present
+      when: ansible_distribution == 'Amazon'
+      tags: [packages, mysql]
+
+    - name: Display setup completion message
+      ansible.builtin.debug:
+        msg: "Base EC2 setup complete for user '{{ target_ssh_user }}'."
+

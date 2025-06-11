@@ -1,0 +1,9 @@
+# 이 파일은 Ansible 플레이북에서 사용할 변수들을 저장합니다.
+
+# EC2에 설정할 대상 사용자 이름
+target_ssh_user: "ec2-user"
+
+# EC2의 authorized_keys 파일에 추가할 SSH 공개키
+# 이 값을 이전에 추출한 실제 공개키 내용 (ssh-rsa AAAA... comment)으로 교체하십시오.
+deploy_ssh_public_key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDPuCVjyN5KAXZArrf6HOXYCQ3NbN9u9dOe+K77VsYhaRbWJXs0X7oKVBoCMBnsLf47/P7YyQ14wKmd4B+qyg3+GjIb8b7v9RyXJe6AQ3H/PKnN+IuXwISElcb2k4kyKM+fVb2aMx32gNNg5g5TXfsJADhJrCrPGO65bceLZ66VCxPSpv9an424iqxG86EaoLJvX4F4BJ/Boap40YlQqJQ1TXtSlfUEKWe8/C0yixUKLvotgdc153b+rUk7MNqjEa7nCQvQSmleyf/1cirWgyBxcJpr3Ngpxwz6iJxDPt8eeVlmjFQKbUoVLRJFWqIAP+SngzIGLpm20oCG+TPmmnf1 Seoul-ec22-key.pem"
+

@@ -1,0 +1,14 @@
+# 이 파일은 그라파나에게 대시보드를 로드할 위치를 알려줍니다.
+apiVersion: 1
+
+providers:
+  - name: 'default-dashboards' # 프로바이더 이름
+    orgId: 1
+    folder: '' # 기본 폴더에 대시보드 생성
+    type: file
+    disableDeletion: false # 그라파나 UI에서 대시보드 삭제 허용
+    editable: true
+    options:
+      # Grafana 컨테이너 내부의 대시보드 설계도(.json 파일) 폴더 경로입니다.
+      path: /etc/grafana/provisioning/dashboards
+

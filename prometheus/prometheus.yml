@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    # 프로메테우스 자기 자신도 모니터링합니다.
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'node_exporter'
+    # Node Exporter가 설치된 모든 서버들을 감시합니다.
+    static_configs:
+      - targets: 
+          - '10.0.2.115:9100'  # 👈 새로운 앱 EC2 (app-ec2)의 Private IP
+          - '10.0.2.12:9100'   # 👈 새로운 모니터링 EC2 (monitering-ec2)의 Private IP
+
+  - job_name: 'weather_app'
+    # 날씨 앱이 제공하는 /metrics 엔드포인트를 감시합니다.
+    metrics_path: /metrics
+    static_configs:
+      - targets: 
+          - '10.0.2.115:80'     # 👈 새로운 앱 EC2 (app-ec2)의 Private IP와 포트
+

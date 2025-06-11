@@ -7,7 +7,7 @@ const bcrypt = require('bcrypt');
 const mysql = require('mysql2/promise');
 const path = require('path');
 const client = require('prom-client'); // Prometheus 클라이언트
-const { SNSClient, SubscribeCommand } = require("@aws-sdk/client-sns"); // ✨ AWS SNS SDK 추가
+const { SNSClient, SubscribeCommand } = require("@aws-sdk/client-sns"); // AWS SNS SDK 추가
 
 // 2. Express 앱 생성 및 포트 설정
 const app = express();
@@ -142,13 +142,9 @@ app.post('/signup', async (req, res) => {
         await connection.query("INSERT INTO users (email, password) VALUES (?, ?)", [email, hashedPassword]);
         console.log(`새 사용자 가입됨: ${email}`);
 
-        // ✅ SNS 이메일 구독 추가
+        // SNS 이메일 구독 추가
         if (process.env.SNS_TOPIC_ARN) {
-            const snsParams = {
-                Protocol: "email",
-                TopicArn: process.env.SNS_TOPIC_ARN,
-                Endpoint: email
-            };
+            const snsParams = { Protocol: "email", TopicArn: process.env.SNS_TOPIC_ARN, Endpoint: email };
             await snsClient.send(new SubscribeCommand(snsParams));
             console.log("📧 SNS 구독 요청 완료:", email);
         } else {

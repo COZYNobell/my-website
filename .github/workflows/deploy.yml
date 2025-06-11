@@ -49,7 +49,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ansible
 
       - name: Setup Master SSH Key
-        # Secret에 저장된 개인키를 임시 파일로 만들어 권한을 설정합니다.
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_DEPLOY_KEY }}" > ~/.ssh/master_deploy_key
@@ -57,7 +56,6 @@ jobs:
           echo "Master Deploy Key configured."
 
       - name: Run Ansible Playbooks to Setup EC2s
-        # --private-key 옵션으로 방금 만든 키 파일을 명확히 지정하여 실행합니다.
         run: |
           echo "Running Ansible playbooks..."
           ansible-playbook \
@@ -81,7 +79,7 @@ jobs:
         with:
           host: ${{ secrets.EC2_HOST_SEOUL }}
           username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_DEPLOY_KEY }} # 프로비저닝과 동일한 마스터 키 사용
+          key: ${{ secrets.EC2_DEPLOY_KEY }}
           script: |
             echo "Deploying application container to App Server (Seoul)..."
             CONTAINER_NAME="seoul-app-prod"
@@ -103,6 +101,7 @@ jobs:
               -e SESSION_SECRET="${{ secrets.SESSION_SECRET }}" \
               -e OPENWEATHERMAP_API_KEY="${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }}" \
               -e Maps_API_KEY="${{ secrets.MAPS_API_KEY_SECRET }}" \
+              -e SNS_TOPIC_ARN="${{ secrets.SNS_TOPIC_ARN }}" \
               $IMAGE_URI
             
             echo "✅ Seoul EC2 deployment complete!"

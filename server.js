@@ -6,8 +6,8 @@ const session = require('express-session');
 const bcrypt = require('bcrypt');
 const mysql = require('mysql2/promise');
 const path = require('path');
-const client = require('prom-client'); // Prometheus 클라이언트
-const { SNSClient, SubscribeCommand } = require("@aws-sdk/client-sns"); // AWS SNS SDK 추가
+const client = require('prom-client');
+const { SNSClient, SubscribeCommand } = require("@aws-sdk/client-sns");
 
 // 2. Express 앱 생성 및 포트 설정
 const app = express();
@@ -33,8 +33,8 @@ console.log("DB_USER:", process.env.DB_USER);
 console.log("DB_PASSWORD (존재 여부만):", process.env.DB_PASSWORD ? "설정됨" : "설정 안됨");
 console.log("DB_NAME:", process.env.DB_NAME);
 console.log("SESSION_SECRET (존재 여부만):", process.env.SESSION_SECRET ? "설정됨" : "설정 안됨");
-console.log("OPENWEATHERMAP_API_KEY (존재 여부만):", process.env.OPENWEATHERMAP_API_KEY_SECRET ? "설정됨" : "설정 안됨");
-console.log("Maps_API_KEY (존재 여부만):", process.env.MAPS_API_KEY_SECRET ? "설정됨" : "설정 안됨");
+console.log("OPENWEATHERMAP_API_KEY_SECRET (존재 여부만):", process.env.OPENWEATHERMAP_API_KEY_SECRET ? "설정됨" : "설정 안됨");
+console.log("MAPS_API_KEY_SECRET (존재 여부만):", process.env.MAPS_API_KEY_SECRET ? "설정됨" : "설정 안됨");
 console.log("SNS_TOPIC_ARN (존재 여부만):", process.env.SNS_TOPIC_ARN ? "설정됨" : "설정 안됨");
 console.log("NODE_ENV:", process.env.NODE_ENV);
 
@@ -339,19 +339,31 @@ app.get('/api/weather-by-coords', async (req, res) => {
     const { lat, lon } = req.query;
     console.log(`[DEBUG] /api/weather-by-coords 요청 수신: lat=${lat}, lon=${lon}`);
     if (!lat || !lon) return res.status(400).json({ message: '위도(lat)와 경도(lon) 파라미터가 필요합니다.' });
-    if (!process.env.OPENWEATHERMAP_API_KEY_SECRET) {
-        console.error('🔴 OPENWEATHERMAP_API_KEY_SECRET 환경 변수가 설정되지 않았습니다.');
+    
+    const apiKey = process.env.OPENWEATHERMAP_API_KEY_SECRET || process.env.OPENWEATHERMAP_API_KEY;
+    if (!apiKey) {
+        console.error('🔴 OpenWeatherMap API 키가 설정되지 않았습니다.');
         return res.status(500).json({ message: '서버에 날씨 API 키가 설정되지 않았습니다.' });
     }
-    const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${process.env.OPENWEATHERMAP_API_KEY_SECRET}&units=metric&lang=kr`;
+
+    const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&lang=kr`;
     try {
         console.log(`[DEBUG] OpenWeatherMap API 호출 (현재 날씨): ${weatherUrl}`);
         const response = await axios.get(weatherUrl);
         console.log(`🟢 OpenWeatherMap API 응답 (현재 날씨) 성공. 상태 코드: ${response.status}`);
-        res.json(response.data);
+        
+        const weatherData = response.data;
+        res.json({ 
+            description: weatherData.weather[0].description, 
+            temperature: weatherData.main.temp, 
+            feels_like: weatherData.main.feels_like, 
+            humidity: weatherData.main.humidity, 
+            cityName: weatherData.name, 
+            icon: weatherData.weather[0].icon 
+        });
     } catch (error) { 
         console.error('❌ 좌표 기반 날씨 정보 가져오기 실패:', error.message, error.response ? `[Status: ${error.response.status}]` : '응답 없음'); 
-        if (IS_DEVELOPMENT && error.response) console.error('[DEBUG] 외부 API 오류 응답 데이터:', error.response.data);
+        if (error.response) console.error('[DEBUG] 외부 API 오류 응답 데이터:', error.response.data);
         res.status(500).json({ message: '날씨 정보를 가져오는 데 실패했습니다.' }); 
     }
 });
@@ -360,11 +372,14 @@ app.get('/api/weather-forecast', async (req, res) => {
     const { lat, lon } = req.query;
     console.log(`[DEBUG] /api/weather-forecast 요청 수신: lat=${lat}, lon=${lon}`);
     if (!lat || !lon) return res.status(400).json({ message: '위도(lat)와 경도(lon) 파라미터가 필요합니다.' });
-    if (!process.env.OPENWEATHERMAP_API_KEY_SECRET) {
-        console.error('🔴 OPENWEATHERMAP_API_KEY_SECRET 환경 변수가 설정되지 않았습니다.');
+
+    const apiKey = process.env.OPENWEATHERMAP_API_KEY_SECRET || process.env.OPENWEATHERMAP_API_KEY;
+    if (!apiKey) {
+        console.error('🔴 OpenWeatherMap API 키가 설정되지 않았습니다.');
         return res.status(500).json({ message: '서버에 날씨 API 키가 설정되지 않았습니다.' });
     }
-    const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${process.env.OPENWEATHERMAP_API_KEY_SECRET}&units=metric&lang=kr`;
+    
+    const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&lang=kr`;
     try {
         console.log(`[DEBUG] OpenWeatherMap API 호출 (주간 예보): ${forecastUrl}`);
         const response = await axios.get(forecastUrl);
@@ -383,13 +398,13 @@ app.get('/api/weather-forecast', async (req, res) => {
         });
         
         const processedForecast = []; 
-        Object.keys(dailyForecasts).slice(1, 4).forEach(date => { // 내일부터 3일치 예보
+        Object.keys(dailyForecasts).slice(1, 4).forEach(date => {
             const dayData = dailyForecasts[date];
             processedForecast.push({
                 date: date,
                 temp_min: Math.min(...dayData.temps).toFixed(1),
                 temp_max: Math.max(...dayData.temps).toFixed(1),
-                description: dayData.weather_descriptions[Math.floor(dayData.weather_descriptions.length / 2)], // 중간 시간대 날씨
+                description: dayData.weather_descriptions[Math.floor(dayData.weather_descriptions.length / 2)],
                 icon: dayData.icons[Math.floor(dayData.icons.length / 2)].replace('n', 'd')
             });
         });
@@ -398,7 +413,7 @@ app.get('/api/weather-forecast', async (req, res) => {
         res.json({ cityName: forecastData.city.name, forecast: processedForecast });
     } catch (error) { 
         console.error('❌ 날씨 예보 정보 가져오기 실패:', error.message, error.response ? `[Status: ${error.response.status}]` : '응답 없음'); 
-        if (IS_DEVELOPMENT && error.response) console.error('[DEBUG] 외부 API 오류 응답 데이터:', error.response.data);
+        if (error.response) console.error('[DEBUG] 외부 API 오류 응답 데이터:', error.response.data);
         res.status(500).json({ message: '날씨 예보 정보를 가져오는 데 실패했습니다.' }); 
     }
 });

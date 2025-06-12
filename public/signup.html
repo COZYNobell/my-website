@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <title>회원가입</title>
     <style>
-        /* login.html과 동일한 스타일 사용 */
         body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 80vh; background-color: #f4f4f4; }
         .container { background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); width: 300px; }
         h1 { text-align: center; margin-bottom: 20px; }
@@ -14,6 +13,8 @@
         button:hover { background-color: #218838; }
         .message-box { margin-top: 15px; padding: 10px; border-radius: 4px; text-align: center; font-weight: bold; }
         .message-box.error { color: #721c24; background-color: #f8d7da; border: 1px solid #f5c6cb; }
+        /* 🔍 추가된 성공 메시지 스타일 */
+        .message-box.success { color: #155724; background-color: #d4edda; border: 1px solid #c3e6cb; }
         .nav-links { margin-top:15px; text-align:center; }
         .nav-links a { color: #007bff; text-decoration: none; }
     </style>
@@ -22,6 +23,9 @@
     <div class="container">
         <h1>회원가입</h1>
         <div id="message-box" class="message-box" style="display: none;"></div>
+        <!-- 🔍 성공 메시지 박스 추가 -->
+        <div id="success-box" class="message-box success" style="display: none;"></div>
+
         <form action="/signup" method="POST">
             <div>
                 <label for="email">이메일:</label>
@@ -42,16 +46,24 @@
         window.onload = function() {
             const urlParams = new URLSearchParams(window.location.search);
             const error = urlParams.get('error');
-            
+            const signup = urlParams.get('signup');
+            const email = urlParams.get('email');
+
             const messageBox = document.getElementById('message-box');
+            const successBox = document.getElementById('success-box');
 
             if (error) {
                 messageBox.textContent = decodeURIComponent(error);
                 messageBox.className = 'message-box error';
                 messageBox.style.display = 'block';
             }
+
+            // 🔍 가입 성공 메시지 표시
+            if (signup === 'success' && email) {
+                successBox.textContent = `${decodeURIComponent(email)} 으로 가입되었습니다. 이메일로 전송된 SNS 인증 메일을 확인해주세요.`;
+                successBox.style.display = 'block';
+            }
         }
     </script>
 </body>
 </html>
-

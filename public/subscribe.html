@@ -5,114 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>날씨 알림 구독 설정</title>
     <style>
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; 
-            display: flex; 
-            flex-direction: column;
-            justify-content: center; 
-            align-items: center; 
-            min-height: 90vh; 
-            background-color: #f8f9fa; 
-            margin: 0; 
-            padding: 20px;
-            box-sizing: border-box;
-        }
-        .container { 
-            background-color: white; 
-            padding: 30px 40px; 
-            border-radius: 10px; 
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1); 
-            width: 100%;
-            max-width: 500px; 
-        }
-        h1 { 
-            text-align: center; 
-            margin-bottom: 25px; 
-            color: #007bff; 
-            font-size: 1.8em;
-        }
-        label { 
-            display: block; 
-            margin-top: 15px; 
-            margin-bottom: 8px; 
-            font-weight: 600; 
-            color: #495057; 
-        }
-        select,
-        input[type="text"], 
-        input[type="number"] { 
-            width: 100%; 
-            padding: 12px; 
-            margin-bottom: 15px; 
-            border: 1px solid #ced4da; 
-            border-radius: 5px; 
-            box-sizing: border-box;
-            font-size: 1em;
-            background-color: #fff; /* 배경색 명시 */
-        }
-        button[type="submit"] { 
-            width: 100%; 
-            padding: 12px; 
-            background-color: #28a745; 
-            color: white; 
-            border: none; 
-            border-radius: 5px; 
-            cursor: pointer; 
-            font-size: 1.1em;
-            font-weight: 600;
-            transition: background-color 0.2s ease-in-out;
-            margin-top: 10px;
-        }
-        button[type="submit"]:hover { 
-            background-color: #218838; 
-        }
-        #message, #loadingMessage { 
-            margin-top: 20px; 
-            text-align: center; 
-            padding: 10px;
-            border-radius: 5px;
-            font-weight: 500;
-        }
+        /* CSS 스타일은 이전과 동일하게 유지합니다. */
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 90vh; background-color: #f8f9fa; margin: 0; padding: 20px; box-sizing: border-box; }
+        .container { background-color: white; padding: 30px 40px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; max-width: 500px; }
+        h1 { text-align: center; margin-bottom: 25px; color: #007bff; font-size: 1.8em; }
+        label { display: block; margin-top: 15px; margin-bottom: 8px; font-weight: 600; color: #495057; }
+        select, input[type="text"], input[type="number"] { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ced4da; border-radius: 5px; box-sizing: border-box; font-size: 1em; background-color: #fff; }
+        button[type="submit"] { width: 100%; padding: 12px; background-color: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 1.1em; font-weight: 600; transition: background-color 0.2s ease-in-out; margin-top: 10px; }
+        button[type="submit"]:hover { background-color: #218838; }
+        #message, #loadingMessage { margin-top: 20px; text-align: center; padding: 10px; border-radius: 5px; font-weight: 500; }
         #message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         #message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .nav-links { text-align: center; margin-top: 25px; }
         .nav-links a { color: #007bff; text-decoration: none; margin: 0 10px; }
         .nav-links a:hover { text-decoration: underline; }
-        .hidden { display: none !important; } 
-        #currentSubscriptions ul { list-style-type: none; padding-left: 0; }
-        #currentSubscriptions li {
-            background-color: #e9ecef;
-            padding: 8px 12px;
-            margin-bottom: 8px;
-            border-radius: 4px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 0.9em;
-        }
-        #currentSubscriptions button.delete-subscription-btn { /* 클래스명으로 스타일 지정 */
-            background-color: #dc3545;
-            color: white;
-            border: none;
-            padding: 4px 8px;
-            font-size: 0.8em;
-            border-radius: 3px;
-            cursor: pointer;
-            margin-left: 10px;
-        }
-        #currentSubscriptions button.delete-subscription-btn:hover {
-            background-color: #c82333;
-        }
-        #noSubscriptionsMessage {
-            color: #6c757d;
-            font-style: italic;
-        }
+        .hidden { display: none !important; }
+        #currentSubscriptions { margin-top: 10px; }
+        #currentSubscriptions ul { list-style-type: none; padding: 0; margin-top: 10px; }
+        #currentSubscriptions li { background-color: #e9ecef; padding: 8px 12px; margin-bottom: 8px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; }
+        #currentSubscriptions button { background-color: #dc3545; color: white; border: none; padding: 4px 8px; font-size: 0.8em; border-radius: 3px; cursor: pointer; margin-left: 10px; }
+        #currentSubscriptions button:hover { background-color: #c82333; }
+        #noSubscriptionsMessage { color: #6c757d; font-style: italic; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>날씨 알림 구독 🌦️</h1>
-        <p id="loadingMessage">구독 정보를 불러오는 중...</p>
+        <p id="loadingMessage">사용자 정보를 불러오는 중...</p>
+        <p id="userInfo" class="hidden" style="text-align: center; font-weight: bold; margin-bottom: 20px;"></p>
 
         <div id="subscriptionContent" class="hidden">
             <form id="subscribeForm">
@@ -120,7 +40,6 @@
                     <label for="favoriteSelect">알림 받을 즐겨찾기 장소:</label>
                     <select id="favoriteSelect" name="favorite_id" required>
                         <option value="">-- 즐겨찾기 선택 --</option>
-                        <!-- 즐겨찾기 목록이 여기에 동적으로 추가됩니다 -->
                     </select>
                     <p id="noFavoritesMessage" class="hidden" style="color: #6c757d; font-style: italic;">
                         먼저 <a href="/dashboard.html">대시보드</a>에서 즐겨찾기를 추가해주세요.
@@ -132,8 +51,6 @@
                         <option value="">-- 조건 선택 --</option>
                         <option value="rain">비 올 때</option>
                         <option value="snow">눈 올 때</option>
-                        <option value="clear">맑을 때</option>
-                        <option value="clouds">흐릴 때 (구름 많음)</option>
                         <option value="temp_gt">기온이 X도 초과</option>
                         <option value="temp_lt">기온이 X도 미만</option>
                     </select>
@@ -145,13 +62,13 @@
                 <button type="submit">이 조건으로 구독하기</button>
             </form>
             <div id="message"></div>
-
+            
             <hr style="margin: 30px 0;">
-            <h2>나의 현재 구독 목록</h2>
-            <ul id="currentSubscriptions">
-                <!-- 현재 구독 목록이 여기에 표시됩니다 -->
-            </ul>
-            <p id="noSubscriptionsMessage" class="hidden">아직 구독한 날씨 알림이 없습니다.</p>
+            <div id="currentSubscriptions">
+                <h2>나의 현재 구독 목록</h2>
+                <ul id="subscriptionsList"></ul>
+                <p id="noSubscriptionsMessage" class="hidden">아직 구독한 날씨 알림이 없습니다.</p>
+            </div>
         </div>
 
         <div class="nav-links">
@@ -160,6 +77,9 @@
     </div>
 
     <script>
+        // 전역 변수로 현재 사용자 정보 저장
+        let currentUser = null;
+
         const favoriteSelect = document.getElementById('favoriteSelect');
         const noFavoritesMessageP = document.getElementById('noFavoritesMessage');
         const conditionTypeSelect = document.getElementById('conditionType');
@@ -169,17 +89,16 @@
         const messageDiv = document.getElementById('message');
         const loadingMessageP = document.getElementById('loadingMessage');
         const subscriptionContentDiv = document.getElementById('subscriptionContent');
-        const currentSubscriptionsUl = document.getElementById('currentSubscriptions');
+        const subscriptionsListUl = document.getElementById('subscriptionsList');
         const noSubscriptionsMessageP = document.getElementById('noSubscriptionsMessage');
+        const userInfoP = document.getElementById('userInfo');
 
-        // API 호출 공통 헬퍼 함수
         async function fetchData(apiUrl, options = {}) {
             try {
                 const response = await fetch(apiUrl, options);
                 if (response.status === 401) {
-                    const data = await response.json().catch(() => ({ message: '로그인이 필요합니다.', redirectTo: '/login' }));
-                    console.warn('fetchData 401:', data.message);
-                    window.location.href = data.redirectTo || '/login';
+                    const data = await response.json().catch(() => ({ message: '로그인이 필요합니다.', redirectTo: '/login.html' }));
+                    window.location.href = data.redirectTo || '/login.html';
                     throw new Error(data.message || '로그인이 필요합니다.'); 
                 }
                 if (!response.ok) {
@@ -188,14 +107,15 @@
                     catch (e) { console.warn('오류 응답 JSON 파싱 실패', response.status, response.statusText); }
                     throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
                 }
-                return await response.json();
+                // 응답 본문이 비어있을 경우를 대비하여 처리
+                const text = await response.text();
+                return text ? JSON.parse(text) : {};
             } catch (error) {
                 console.error(`API 호출 (${apiUrl}) 실패:`, error.message);
                 throw error; 
             }
         }
 
-        // 즐겨찾기 목록 불러와서 드롭다운 채우기
         async function populateFavoritesDropdown() {
             if (!favoriteSelect || !noFavoritesMessageP) return;
             try {
@@ -225,12 +145,11 @@
             }
         }
 
-        // 현재 날씨 구독 목록 불러와서 표시하기
         async function loadAndDisplayCurrentSubscriptions() {
-            if (!currentSubscriptionsUl || !noSubscriptionsMessageP) return;
+            if (!subscriptionsListUl || !noSubscriptionsMessageP) return;
             try {
                 const subscriptions = await fetchData('/api/weather-subscriptions');
-                currentSubscriptionsUl.innerHTML = ''; 
+                subscriptionsListUl.innerHTML = ''; 
                 
                 if (subscriptions && subscriptions.length > 0) {
                     noSubscriptionsMessageP.classList.add('hidden');
@@ -240,39 +159,34 @@
                         if (sub.condition_value) {
                             conditionText += ` (${sub.condition_value})`;
                         }
-                        li.innerHTML = `<span>${sub.location_name} - <span class="condition-text">${conditionText}</span></span>`;
+                        li.innerHTML = `<span>${sub.location_name} - <b>${conditionText}</b></span>`;
                         
                         const deleteButton = document.createElement('button');
-                        deleteButton.className = 'delete-subscription-btn';
-                        deleteButton.textContent = '구독 취소';
-                        deleteButton.dataset.id = sub.id; // 삭제 시 사용할 구독 ID
-                        deleteButton.dataset.info = `${sub.location_name}의 '${conditionText}'`; // 확인 메시지용
-
-                        deleteButton.addEventListener('click', async function() {
-                            if (confirm(`'${this.dataset.info}' 구독을 취소하시겠습니까?`)) {
+                        deleteButton.textContent = '취소';
+                        deleteButton.onclick = async () => {
+                            if (confirm(`'${sub.location_name}'의 '${conditionText}' 구독을 취소하시겠습니까?`)) {
                                 try {
-                                    await fetchData(`/api/weather-subscriptions/${this.dataset.id}`, { method: 'DELETE' });
+                                    await fetchData(`/api/weather-subscriptions/${sub.id}`, { method: 'DELETE' });
                                     alert('구독이 취소되었습니다.');
                                     loadAndDisplayCurrentSubscriptions(); 
                                 } catch (deleteError) {
                                     alert(`구독 취소 실패: ${deleteError.message}`);
                                 }
                             }
-                        });
+                        };
                         li.appendChild(deleteButton);
-                        currentSubscriptionsUl.appendChild(li);
+                        subscriptionsListUl.appendChild(li);
                     });
                 } else {
                     noSubscriptionsMessageP.classList.remove('hidden');
                 }
             } catch (error) {
                 console.error('현재 구독 목록 로드 실패:', error);
-                if(currentSubscriptionsUl) currentSubscriptionsUl.innerHTML = '<li>구독 목록을 불러오는 데 실패했습니다.</li>';
+                if(subscriptionsListUl) subscriptionsListUl.innerHTML = '<li>구독 목록을 불러오는 데 실패했습니다.</li>';
                 if (noSubscriptionsMessageP) noSubscriptionsMessageP.classList.remove('hidden');
             }
         }
 
-        // 날씨 조건 선택 시 값 입력 필드 표시/숨김
         if (conditionTypeSelect) {
             conditionTypeSelect.addEventListener('change', function() {
                 if (this.value === 'temp_gt' || this.value === 'temp_lt') {
@@ -291,42 +205,42 @@
             });
         }
 
-        // 구독 폼 제출 처리
         if (subscribeForm) {
             subscribeForm.addEventListener('submit', async function(event) {
                 event.preventDefault(); 
-                if (messageDiv) {
-                    messageDiv.textContent = ''; 
-                    messageDiv.className = '';   
+                messageDiv.textContent = ''; 
+                messageDiv.className = '';   
+
+                const favoriteId = favoriteSelect.value;
+                const conditionType = conditionTypeSelect.value;
+                const conditionValue = conditionValueInput.value;
+
+                if (!currentUser) {
+                    messageDiv.textContent = '오류: 사용자 정보를 불러올 수 없습니다. 다시 로그인해주세요.';
+                    messageDiv.className = 'error'; return;
                 }
-
-                const favoriteId = favoriteSelect ? favoriteSelect.value : '';
-                const conditionType = conditionTypeSelect ? conditionTypeSelect.value : '';
-                const conditionValue = conditionValueInput ? conditionValueInput.value : '';
-
                 if (!favoriteId) {
-                    if (messageDiv) { messageDiv.textContent = '오류: 알림 받을 즐겨찾기 장소를 선택해주세요.'; messageDiv.className = 'error'; }
-                    return;
+                    messageDiv.textContent = '오류: 알림 받을 즐겨찾기 장소를 선택해주세요.';
+                    messageDiv.className = 'error'; return;
                 }
                 if (!conditionType) {
-                    if (messageDiv) { messageDiv.textContent = '오류: 알림 받을 날씨 조건을 선택해주세요.'; messageDiv.className = 'error'; }
-                    return;
+                    messageDiv.textContent = '오류: 알림 받을 날씨 조건을 선택해주세요.';
+                    messageDiv.className = 'error'; return;
                 }
-                if ((conditionType === 'temp_gt' || conditionType === 'temp_lt') && !conditionValue) {
-                    if (messageDiv) { messageDiv.textContent = '오류: 선택된 날씨 조건에 대한 값을 입력해주세요.'; messageDiv.className = 'error'; }
-                    return;
+                if (conditionValueInput.required && !conditionValue) {
+                    messageDiv.textContent = '오류: 선택된 날씨 조건에 대한 값을 입력해주세요.';
+                    messageDiv.className = 'error'; return;
                 }
 
                 const formData = {
+                    action: "subscribe_condition",
+                    email: currentUser.email,
                     favorite_id: parseInt(favoriteId), 
                     condition_type: conditionType,
+                    condition_value: (conditionValueInput.required && conditionValue !== '') ? conditionValue : null
                 };
-
-                if (conditionValueInput && conditionValueInput.required && conditionValue !== '') {
-                    formData.condition_value = conditionValue; 
-                }
                 
-                console.log('Submitting subscription data:', formData);
+                console.log('Submitting subscription data:', JSON.stringify(formData, null, 2));
 
                 try {
                     const result = await fetchData('/api/weather-subscriptions', {
@@ -335,34 +249,31 @@
                         body: JSON.stringify(formData)
                     });
                     
-                    if (messageDiv) {
-                        messageDiv.textContent = '성공: ' + (result.message || "구독 정보가 저장되었습니다.");
-                        messageDiv.className = 'success'; 
-                    }
+                    messageDiv.textContent = '성공: ' + (result.message || "구독 정보가 저장되었습니다.");
+                    messageDiv.className = 'success'; 
                     this.reset(); 
                     if(conditionValueDiv) conditionValueDiv.classList.add('hidden');
                     loadAndDisplayCurrentSubscriptions(); 
                     
                 } catch (error) { 
                     console.error('구독 요청 실패:', error);
-                    if (messageDiv) {
-                        messageDiv.textContent = '오류: ' + error.message; 
-                        messageDiv.className = 'error';
-                    }
+                    messageDiv.textContent = '오류: ' + error.message; 
+                    messageDiv.className = 'error';
                 }
             });
         }
 
-        // 페이지 로드 시 초기화 작업
         async function initializePage() {
-            if (!loadingMessageP || !subscriptionContentDiv) {
-                 console.error("initializePage: 필수 로딩/콘텐츠 DOM 요소를 찾을 수 없습니다.");
-                 return;
-            }
-            loadingMessageP.classList.remove('hidden');
-            subscriptionContentDiv.classList.add('hidden');
+            if (!loadingMessageP || !subscriptionContentDiv) return;
+            
             try {
-                await fetchData('/api/current-user'); // 로그인 상태 확인 및 401 시 리디렉션
+                const userResponse = await fetchData('/api/current-user'); 
+                currentUser = userResponse.user;
+                
+                if(userInfoP && currentUser) {
+                    userInfoP.textContent = `${currentUser.email} 님, 환영합니다.`;
+                    userInfoP.classList.remove('hidden');
+                }
                                 
                 await populateFavoritesDropdown();
                 await loadAndDisplayCurrentSubscriptions();
@@ -371,13 +282,11 @@
                 subscriptionContentDiv.classList.remove('hidden');
 
             } catch (error) {
-                console.error("페이지 초기화 실패 (initializePage catch):", error.message);
-                // fetchData에서 401 시 이미 리디렉션되었을 것이므로, 여기는 다른 오류에 대한 처리
+                console.error("페이지 초기화 실패:", error.message);
                 if (loadingMessageP) {
                     loadingMessageP.textContent = "페이지를 불러오는 중 오류가 발생했습니다. " + error.message;
                     loadingMessageP.style.color = "red";
                 }
-                // subscriptionContentDiv는 계속 숨겨진 상태로 두거나, 오류 메시지 표시
             }
         }
 
@@ -385,4 +294,3 @@
     </script>
 </body>
 </html>
-

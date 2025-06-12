@@ -1,0 +1,67 @@
+name: Deploy Monitoring Stack to EKS
+
+on:
+  # 이 워크플로우도 수동으로만 실행되도록 설정합니다.
+  workflow_dispatch:
+
+jobs:
+  deploy-monitoring:
+    name: Deploy Prometheus & Grafana to EKS
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. AWS 자격 증명 설정
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      # 2. kubectl 및 eksctl, Helm 설치
+      - name: Install Utilities (kubectl, eksctl, helm)
+        run: |
+          echo "Installing kubectl..."
+          curl -o kubectl https://s3.us-west-2.amazonaws.com/amazon-eks/1.28.5/2024-01-04/bin/linux/amd64/kubectl
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/
+          
+          echo "Installing eksctl..."
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin
+          
+          echo "Installing Helm..."
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod 700 get_helm.sh
+          ./get_helm.sh
+          
+          echo "Installation complete."
+          kubectl version --client
+          eksctl version
+          helm version
+
+      # 3. kubectl이 EKS 클러스터에 접속하도록 설정
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ap-northeast-2 --name my-weather-app-cluster
+          echo "Kubeconfig updated for cluster 'my-weather-app-cluster'"
+
+      # 4. Helm 리포지토리 추가 및 업데이트
+      - name: Add Prometheus community Helm repository
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+
+      # 5. kube-prometheus-stack 배포 (Prometheus + Grafana 등)
+      - name: Deploy kube-prometheus-stack
+        run: |
+          # 'monitoring' 네임스페이스가 없으면 생성하고, 있으면 무시합니다.
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+          # Helm을 사용하여 모니터링 스택을 설치하거나 업그레이드합니다.
+          # '--install'은 해당 릴리스가 없으면 설치하고, 있으면 업그레이드합니다.
+          helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
+            --namespace monitoring \
+            --set grafana.adminPassword='${{ secrets.GRAFANA_ADMIN_PASSWORD }}'
+            # (선택 사항) values.yaml 파일을 사용하여 더 많은 설정을 커스터마이징할 수 있습니다.
+

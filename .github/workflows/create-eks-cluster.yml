@@ -44,5 +44,5 @@ jobs:
             --nodes-min 1 \
             --nodes-max 3 \
             --with-oidc \
-            --ssh-access --ssh-public-key Seoul-ec22-key
+            --ssh-access --ssh-public-key Seoul-ec22-key.pem
 

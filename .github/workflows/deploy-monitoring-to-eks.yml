@@ -1,24 +1,25 @@
 name: Deploy Monitoring Stack to EKS
 
 on:
-  # 이 워크플로우는 수동으로만 실행되도록 설정합니다.
   workflow_dispatch:
 
 jobs:
   deploy-monitoring:
     name: Deploy Prometheus & Grafana to EKS
     runs-on: ubuntu-latest
+    # ✨ OIDC 인증을 위한 권한 추가 ✨
+    permissions:
+      id-token: write
+      contents: read
     
     steps:
-      # 1. AWS 자격 증명 설정
+      # ✨ AWS 자격 증명 설정 스텝 수정 ✨
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
           aws-region: ap-northeast-2
 
-      # 2. 필수 유틸리티 설치 (kubectl, helm)
       - name: Install Utilities (kubectl, helm)
         run: |
           echo "Installing kubectl..."
@@ -30,36 +31,24 @@ jobs:
           curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
           chmod 700 get_helm.sh
           ./get_helm.sh
-          
-          echo "Installation complete."
-          kubectl version --client
-          helm version
 
-      # 3. kubectl이 EKS 클러스터에 접속하도록 설정
       - name: Update kubeconfig
         run: |
           aws eks update-kubeconfig --region ap-northeast-2 --name my-weather-app-cluster
-          echo "Kubeconfig updated for cluster 'my-weather-app-cluster'"
 
-      # 4. Helm 리포지토리 추가 및 업데이트
       - name: Add Prometheus community Helm repository
         run: |
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
           helm repo update
 
-      # 5. kube-prometheus-stack 배포 (Prometheus + Grafana 등)
       - name: Deploy kube-prometheus-stack
         run: |
-          # 'monitoring' 네임스페이스가 없으면 생성하고, 있으면 무시합니다.
           kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-
-          # Helm을 사용하여 모니터링 스택을 설치하거나 업그레이드합니다.
           helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
             --namespace monitoring \
             --set grafana.adminPassword='${{ secrets.GRAFANA_ADMIN_PASSWORD }}' \
-            --wait # 모든 리소스가 준비될 때까지 기다립니다.
+            --wait
 
-      # 6. 배포 상태 확인
       - name: Verify deployment status
         run: |
           echo "Verifying deployment status in 'monitoring' namespace..."

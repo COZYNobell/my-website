@@ -1,0 +1,55 @@
+name: Create AWS EKS Cluster
+
+on:
+  # 이 워크플로우는 수동으로만 실행되도록 설정합니다.
+  # 브랜치에 푸시할 때마다 클러스터를 생성하는 실수를 방지합니다.
+  workflow_dispatch:
+
+jobs:
+  create-cluster:
+    name: Create AWS EKS Cluster
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. AWS 자격 증명 설정
+      # GitHub Secrets에 저장된 AWS 키를 사용하여 인증합니다.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      # 2. kubectl 설치 (Kubernetes 클러스터 제어용)
+      - name: Install kubectl
+        run: |
+          curl -o kubectl https://s3.us-west-2.amazonaws.com/amazon-eks/1.28.5/2024-01-04/bin/linux/amd64/kubectl
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/
+          echo "kubectl version:"
+          kubectl version --client
+
+      # 3. eksctl 설치 (EKS 클러스터 생성용)
+      - name: Install eksctl
+        run: |
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin
+          echo "eksctl version:"
+          eksctl version
+
+      # 4. EKS 클러스터 생성
+      # 이 과정은 약 15-20분 정도 소요될 수 있습니다.
+      - name: Create EKS cluster
+        run: |
+          eksctl create cluster \
+            --name my-weather-app-cluster \
+            --region ap-northeast-2 \
+            --nodegroup-name standard-workers \
+            --node-type t3.medium \
+            --nodes 2 \
+            --nodes-min 1 \
+            --nodes-max 3 \
+            --with-oidc \
+            --ssh-access --ssh-public-key Seoul-ec22-key
+            # --ssh-public-key 값은 AWS에 등록된 실제 키 페어의 '이름'이어야 합니다.
+

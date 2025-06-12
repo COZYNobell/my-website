@@ -7,17 +7,20 @@ jobs:
   create-cluster:
     name: Create AWS EKS Cluster
     runs-on: ubuntu-latest
+    # ✨ OIDC 인증을 위한 권한 추가 ✨
+    permissions:
+      id-token: write
+      contents: read
     
     steps:
-      # 1. AWS 자격 증명 설정
+      # ✨ AWS 자격 증명 설정 스텝 수정 ✨
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # IAM 사용자의 액세스 키 대신, 역할을 수임하도록 변경합니다.
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
           aws-region: ap-northeast-2
 
-      # 2. kubectl 설치
       - name: Install kubectl
         run: |
           curl -o kubectl https://s3.us-west-2.amazonaws.com/amazon-eks/1.28.5/2024-01-04/bin/linux/amd64/kubectl
@@ -25,14 +28,12 @@ jobs:
           sudo mv ./kubectl /usr/local/bin/
           kubectl version --client
 
-      # 3. eksctl 설치
       - name: Install eksctl
         run: |
           curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/eksctl /usr/local/bin
           eksctl version
 
-      # 4. EKS 클러스터 생성
       - name: Create EKS cluster
         run: |
           eksctl create cluster \
@@ -44,5 +45,4 @@ jobs:
             --nodes-min 1 \
             --nodes-max 3 \
             --with-oidc \
-            --ssh-access --ssh-public-key Seoul-ec22-key.pem
-
+            --ssh-access --ssh-public-key Seoul-ec22-key

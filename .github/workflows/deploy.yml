@@ -92,6 +92,7 @@ jobs:
             if [ "$(sudo docker ps -q -f name=$CONTAINER_NAME)" ]; then sudo docker stop $CONTAINER_NAME; fi
             if [ "$(sudo docker ps -aq -f name=$CONTAINER_NAME)" ]; then sudo docker rm $CONTAINER_NAME; fi
             
+            # ✨ API 키 환경 변수 이름 수정 ✨
             sudo docker run -d -p 80:3000 --name $CONTAINER_NAME --restart always \
               -e NODE_ENV="production" \
               -e DB_HOST="${{ secrets.DB_HOST_SEOUL }}" \
@@ -99,8 +100,8 @@ jobs:
               -e DB_PASSWORD="${{ secrets.DB_PASSWORD_SEOUL }}" \
               -e DB_NAME="${{ secrets.DB_NAME_SEOUL }}" \
               -e SESSION_SECRET="${{ secrets.SESSION_SECRET }}" \
-              -e OPENWEATHERMAP_API_KEY="${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }}" \
-              -e Maps_API_KEY="${{ secrets.MAPS_API_KEY_SECRET }}" \
+              -e OPENWEATHERMAP_API_KEY_SECRET="${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }}" \
+              -e MAPS_API_KEY_SECRET="${{ secrets.MAPS_API_KEY_SECRET }}" \
               -e SNS_TOPIC_ARN="${{ secrets.SNS_TOPIC_ARN }}" \
               $IMAGE_URI
             

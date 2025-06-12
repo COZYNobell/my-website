@@ -1,0 +1,93 @@
+name: Setup AWS Load Balancer Controller on EKS
+
+on:
+  workflow_dispatch: # 수동으로만 실행하도록 설정 (클러스터당 한 번만 필요)
+
+jobs:
+  deploy-lb-controller:
+    name: Deploy AWS Load Balancer Controller
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # IAM OIDC 연동을 위해 필요
+      contents: read
+
+    steps:
+      # 1. AWS 자격 증명 설정
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsAdminRole # OIDC 역할을 사용하는 것이 더 안전합니다.
+          aws-region: ap-northeast-2
+          # 만약 OIDC 역할이 없다면, 아래 키 기반 인증을 사용합니다.
+          # aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          # aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      # 2. 필수 유틸리티 설치 (eksctl, kubectl, curl)
+      - name: Install Utilities
+        run: |
+          echo "Installing eksctl..."
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin
+          
+          echo "Installing kubectl..."
+          curl -o kubectl https://s3.us-west-2.amazonaws.com/amazon-eks/1.28.5/2024-01-04/bin/linux/amd64/kubectl
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/
+          
+          echo "Verifying installations..."
+          eksctl version
+          kubectl version --client
+
+      # 3. IAM OIDC 공급자 연결 (클러스터당 한 번 실행)
+      - name: Associate IAM OIDC provider
+        run: |
+          eksctl utils associate-iam-oidc-provider --region=ap-northeast-2 --cluster=my-weather-app-cluster --approve
+
+      # 4. 컨트롤러용 IAM 정책 생성
+      - name: Create IAM policy for Load Balancer Controller
+        id: create_policy
+        run: |
+          echo "Downloading IAM policy..."
+          curl -o iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.2/docs/install/iam_policy.json
+          
+          echo "Creating IAM policy..."
+          POLICY_ARN=$(aws iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://iam_policy.json --query 'Policy.Arn' --output text)
+          
+          # 정책이 이미 존재할 경우 발생하는 오류를 무시하고, 기존 정책의 ARN을 가져옵니다.
+          if [ -z "$POLICY_ARN" ]; then
+            echo "Policy already exists. Getting existing policy ARN..."
+            POLICY_ARN=$(aws iam get-policy --policy-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:policy/AWSLoadBalancerControllerIAMPolicy --query 'Policy.Arn' --output text)
+          fi
+          
+          echo "Policy ARN: $POLICY_ARN"
+          echo "policy_arn=$POLICY_ARN" >> $GITHUB_OUTPUT
+
+      # 5. 컨트롤러용 IAM 역할 및 Kubernetes 서비스 계정 생성
+      - name: Create IAM service account for Load Balancer Controller
+        run: |
+          eksctl create iamserviceaccount \
+            --cluster=my-weather-app-cluster \
+            --namespace=kube-system \
+            --name=aws-load-balancer-controller \
+            --role-name "AmazonEKSLoadBalancerControllerRole" \
+            --attach-policy-arn=${{ steps.create_policy.outputs.policy_arn }} \
+            --approve
+
+      # 6. Helm을 사용하여 AWS Load Balancer Controller 설치
+      - name: Install AWS Load Balancer Controller using Helm
+        run: |
+          helm repo add eks https://aws.github.io/eks-charts
+          helm repo update eks
+          
+          helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+            -n kube-system \
+            --set clusterName=my-weather-app-cluster \
+            --set serviceAccount.create=false \
+            --set serviceAccount.name=aws-load-balancer-controller \
+            --wait
+
+      # 7. 컨트롤러 배포 확인
+      - name: Verify controller deployment
+        run: |
+          sleep 15
+          kubectl get deployment -n kube-system aws-load-balancer-controller

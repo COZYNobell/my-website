@@ -7,7 +7,7 @@ const bcrypt = require('bcrypt');
 const mysql = require('mysql2/promise');
 const path = require('path');
 const client = require('prom-client'); // Prometheus 클라이언트
-const { SNSClient, SubscribeCommand } = require("@aws-sdk/client-sns"); // ✨ AWS SNS SDK 추가
+const { SNSClient, SubscribeCommand } = require("@aws-sdk/client-sns"); // AWS SNS SDK 추가
 
 // 2. Express 앱 생성 및 포트 설정
 const app = express();
@@ -33,8 +33,8 @@ console.log("DB_USER:", process.env.DB_USER);
 console.log("DB_PASSWORD (존재 여부만):", process.env.DB_PASSWORD ? "설정됨" : "설정 안됨");
 console.log("DB_NAME:", process.env.DB_NAME);
 console.log("SESSION_SECRET (존재 여부만):", process.env.SESSION_SECRET ? "설정됨" : "설정 안됨");
-console.log("OPENWEATHERMAP_API_KEY (존재 여부만):", process.env.OPENWEATHERMAP_API_KEY ? "설정됨" : "설정 안됨");
-console.log("Maps_API_KEY (존재 여부만):", process.env.Maps_API_KEY ? "설정됨" : "설정 안됨");
+console.log("OPENWEATHERMAP_API_KEY (존재 여부만):", process.env.OPENWEATHERMAP_API_KEY_SECRET ? "설정됨" : "설정 안됨");
+console.log("Maps_API_KEY (존재 여부만):", process.env.MAPS_API_KEY_SECRET ? "설정됨" : "설정 안됨");
 console.log("SNS_TOPIC_ARN (존재 여부만):", process.env.SNS_TOPIC_ARN ? "설정됨" : "설정 안됨");
 console.log("NODE_ENV:", process.env.NODE_ENV);
 
@@ -48,7 +48,7 @@ const dbPool = mysql.createPool({
   queueLimit: 0
 });
 
-// 데이터베이스 스키마 및 테이블 생성/확인 함수
+// 데이터베이스 초기화 함수
 async function initializeDatabase() {
   let connection;
   try {
@@ -85,11 +85,7 @@ async function initializeDatabase() {
     if (connection) connection.release();
   }
 }
-
 initializeDatabase();
-
-const OPENWEATHERMAP_API_KEY = process.env.OPENWEATHERMAP_API_KEY;
-const Maps_API_KEY = process.env.Maps_API_KEY;
 
 // --- 미들웨어 설정 ---
 app.use(express.static(path.join(__dirname, 'public'))); 
@@ -114,51 +110,40 @@ app.use(session({
   cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 } 
 }));
 
-// --- 인증 미들웨어 ---
+// --- 라우트 및 서버 실행 ---
+
 function ensureAuthenticated(req, res, next) {
     if (IS_DEVELOPMENT) console.log(`[DEBUG] Path: ${req.path}, Authenticated: ${req.session.isAuthenticated}`);
     if (req.session.isAuthenticated && req.session.user) return next(); 
-    if (req.path.startsWith('/api/')) return res.status(401).json({ message: '로그인이 필요합니다.', redirectTo: '/login' });
+    if (req.path.startsWith('/api/')) return res.status(401).json({ message: '로그인이 필요합니다.', redirectTo: '/login.html' });
     res.redirect(`/login.html?message=${encodeURIComponent('로그인이 필요합니다.')}`); 
 }
 
-// --- HTML 페이지 라우트 ---
 app.get('/signup', (req, res) => res.sendFile(path.join(__dirname, 'public', 'signup.html')));
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
 app.get('/dashboard.html', ensureAuthenticated, (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
 app.get('/subscribe', ensureAuthenticated, (req, res) => res.sendFile(path.join(__dirname, 'public', 'subscribe.html')));
 
-// --- 인증 API 라우트 (오류 시 리디렉션 방식) ---
 app.post('/signup', async (req, res) => {
     const { email, password } = req.body;
-    if (!email || !password) {
-        return res.redirect(`/signup.html?error=${encodeURIComponent('이메일과 비밀번호를 모두 입력해주세요.')}`);
-    }
+    if (!email || !password) return res.redirect(`/signup.html?error=${encodeURIComponent('이메일과 비밀번호를 모두 입력해주세요.')}`);
     let connection;
     try {
         connection = await dbPool.getConnection();
         await connection.query(`USE \`${process.env.DB_NAME}\``);
         const [existingUsers] = await connection.query("SELECT * FROM users WHERE email = ?", [email]);
-        if (existingUsers.length > 0) {
-            return res.redirect(`/signup.html?error=${encodeURIComponent('이미 가입된 이메일입니다.')}`);
-        }
+        if (existingUsers.length > 0) return res.redirect(`/signup.html?error=${encodeURIComponent('이미 가입된 이메일입니다.')}`);
         const hashedPassword = await bcrypt.hash(password, 10);
         await connection.query("INSERT INTO users (email, password) VALUES (?, ?)", [email, hashedPassword]);
         console.log(`새 사용자 가입됨: ${email}`);
 
-        // SNS 이메일 구독 추가
         if (process.env.SNS_TOPIC_ARN) {
-            const snsParams = {
-                Protocol: "email",
-                TopicArn: process.env.SNS_TOPIC_ARN,
-                Endpoint: email
-            };
+            const snsParams = { Protocol: "email", TopicArn: process.env.SNS_TOPIC_ARN, Endpoint: email };
             await snsClient.send(new SubscribeCommand(snsParams));
             console.log("📧 SNS 구독 요청 완료:", email);
         } else {
             console.warn("🟡 SNS_TOPIC_ARN 환경 변수가 설정되지 않아, SNS 구독 요청을 건너뜁니다.");
         }
-
         res.redirect(`/login.html?signup=success&email=${encodeURIComponent(email)}`); 
     } catch (error) {
         console.error("회원가입 오류:", error.message, error.stack);
@@ -168,17 +153,13 @@ app.post('/signup', async (req, res) => {
 
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
-    if (!email || !password) {
-        return res.redirect(`/login.html?error=${encodeURIComponent('이메일과 비밀번호를 모두 입력해주세요.')}`);
-    }
+    if (!email || !password) return res.redirect(`/login.html?error=${encodeURIComponent('이메일과 비밀번호를 모두 입력해주세요.')}`);
     let connection;
     try {
         connection = await dbPool.getConnection();
         await connection.query(`USE \`${process.env.DB_NAME}\``);
         const [users] = await connection.query("SELECT * FROM users WHERE email = ?", [email]);
-        if (users.length === 0) {
-            return res.redirect(`/login.html?error=${encodeURIComponent('이메일 또는 비밀번호가 일치하지 않습니다.')}`);
-        }
+        if (users.length === 0) return res.redirect(`/login.html?error=${encodeURIComponent('이메일 또는 비밀번호가 일치하지 않습니다.')}`);
         const user = users[0];
         const isMatch = await bcrypt.compare(password, user.password);
         if (isMatch) {
@@ -203,12 +184,9 @@ app.get('/logout', (req, res) => {
             console.log(`사용자 (${userEmail}) 로그아웃 성공`);
             res.redirect('/?logout=success'); 
         });
-    } else {
-        res.redirect('/');
-    }
+    } else { res.redirect('/'); }
 });
 
-// --- 기능 API 라우트 ---
 app.get('/api/current-user', ensureAuthenticated, (req, res) => res.json({ loggedIn: true, user: req.session.user }));
 
 app.post('/api/favorites', ensureAuthenticated, async (req, res) => {
@@ -359,29 +337,69 @@ app.delete('/api/weather-subscriptions/:id', ensureAuthenticated, async (req, re
 
 app.get('/api/weather-by-coords', async (req, res) => {
     const { lat, lon } = req.query;
+    console.log(`[DEBUG] /api/weather-by-coords 요청 수신: lat=${lat}, lon=${lon}`);
     if (!lat || !lon) return res.status(400).json({ message: '위도(lat)와 경도(lon) 파라미터가 필요합니다.' });
-    if (!OPENWEATHERMAP_API_KEY) return res.status(500).json({ message: '서버에 OpenWeatherMap API 키가 설정되지 않았습니다.' });
-    const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OPENWEATHERMAP_API_KEY}&units=metric&lang=kr`;
+    if (!process.env.OPENWEATHERMAP_API_KEY_SECRET) {
+        console.error('🔴 OPENWEATHERMAP_API_KEY_SECRET 환경 변수가 설정되지 않았습니다.');
+        return res.status(500).json({ message: '서버에 날씨 API 키가 설정되지 않았습니다.' });
+    }
+    const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${process.env.OPENWEATHERMAP_API_KEY_SECRET}&units=metric&lang=kr`;
     try {
+        console.log(`[DEBUG] OpenWeatherMap API 호출 (현재 날씨): ${weatherUrl}`);
         const response = await axios.get(weatherUrl);
+        console.log(`🟢 OpenWeatherMap API 응답 (현재 날씨) 성공. 상태 코드: ${response.status}`);
         res.json(response.data);
-    } catch (error) {
-        console.error('❌ 좌표 기반 날씨 정보 가져오기 실패:', error.message);
-        res.status(500).json({ message: '날씨 정보를 가져오는 데 실패했습니다.' });
+    } catch (error) { 
+        console.error('❌ 좌표 기반 날씨 정보 가져오기 실패:', error.message, error.response ? `[Status: ${error.response.status}]` : '응답 없음'); 
+        if (IS_DEVELOPMENT && error.response) console.error('[DEBUG] 외부 API 오류 응답 데이터:', error.response.data);
+        res.status(500).json({ message: '날씨 정보를 가져오는 데 실패했습니다.' }); 
     }
 });
 
 app.get('/api/weather-forecast', async (req, res) => {
     const { lat, lon } = req.query;
+    console.log(`[DEBUG] /api/weather-forecast 요청 수신: lat=${lat}, lon=${lon}`);
     if (!lat || !lon) return res.status(400).json({ message: '위도(lat)와 경도(lon) 파라미터가 필요합니다.' });
-    if (!OPENWEATHERMAP_API_KEY) return res.status(500).json({ message: '서버에 OpenWeatherMap API 키가 설정되지 않았습니다.' });
-    const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${OPENWEATHERMAP_API_KEY}&units=metric&lang=kr`;
+    if (!process.env.OPENWEATHERMAP_API_KEY_SECRET) {
+        console.error('🔴 OPENWEATHERMAP_API_KEY_SECRET 환경 변수가 설정되지 않았습니다.');
+        return res.status(500).json({ message: '서버에 날씨 API 키가 설정되지 않았습니다.' });
+    }
+    const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${process.env.OPENWEATHERMAP_API_KEY_SECRET}&units=metric&lang=kr`;
     try {
+        console.log(`[DEBUG] OpenWeatherMap API 호출 (주간 예보): ${forecastUrl}`);
         const response = await axios.get(forecastUrl);
-        res.json(response.data);
-    } catch (error) {
-        console.error('❌ 날씨 예보 정보 가져오기 실패:', error.message);
-        res.status(500).json({ message: '날씨 예보 정보를 가져오는 데 실패했습니다.' });
+        const forecastData = response.data;
+        console.log(`🟢 OpenWeatherMap API 응답 (주간 예보) 성공. 상태 코드: ${response.status}.`);
+        
+        const dailyForecasts = {};
+        forecastData.list.forEach(item => { 
+            const date = item.dt_txt.split(' ')[0]; 
+            if (!dailyForecasts[date]) { 
+                dailyForecasts[date] = { temps: [], weather_descriptions: [], icons: [] }; 
+            } 
+            dailyForecasts[date].temps.push(item.main.temp); 
+            dailyForecasts[date].weather_descriptions.push(item.weather[0].description); 
+            dailyForecasts[date].icons.push(item.weather[0].icon); 
+        });
+        
+        const processedForecast = []; 
+        Object.keys(dailyForecasts).slice(1, 4).forEach(date => { // 내일부터 3일치 예보
+            const dayData = dailyForecasts[date];
+            processedForecast.push({
+                date: date,
+                temp_min: Math.min(...dayData.temps).toFixed(1),
+                temp_max: Math.max(...dayData.temps).toFixed(1),
+                description: dayData.weather_descriptions[Math.floor(dayData.weather_descriptions.length / 2)], // 중간 시간대 날씨
+                icon: dayData.icons[Math.floor(dayData.icons.length / 2)].replace('n', 'd')
+            });
+        });
+        
+        console.log(`[DEBUG] 예보 데이터 처리 완료. 응답 전송.`);
+        res.json({ cityName: forecastData.city.name, forecast: processedForecast });
+    } catch (error) { 
+        console.error('❌ 날씨 예보 정보 가져오기 실패:', error.message, error.response ? `[Status: ${error.response.status}]` : '응답 없음'); 
+        if (IS_DEVELOPMENT && error.response) console.error('[DEBUG] 외부 API 오류 응답 데이터:', error.response.data);
+        res.status(500).json({ message: '날씨 예보 정보를 가져오는 데 실패했습니다.' }); 
     }
 });
 

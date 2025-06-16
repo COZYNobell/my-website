@@ -1,0 +1,30 @@
+# k8s/app-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weather-app-deployment
+spec:
+  replicas: 2 # 앱을 2개 실행하여 안정성 확보
+  selector:
+    matchLabels:
+      app: weather-app
+  template:
+    metadata:
+      labels:
+        app: weather-app
+    spec:
+      containers:
+      - name: weather-app-container
+        image: 501257812675.dkr.ecr.ap-northeast-2.amazonaws.com/my-node-app:latest # ECR 이미지 주소
+        ports:
+        - containerPort: 3000 # 앱 내부 포트
+        envFrom:
+        - secretRef:
+            name: app-secrets # 아래에서 만들 Secret의 이름을 참조
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"

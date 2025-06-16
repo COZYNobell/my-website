@@ -1,3 +1,5 @@
+# terraform.tfvars
+
 db_name_seoul     = "master_db"
 db_name_tokyo     = "master_db"
 db_user           = "admin"

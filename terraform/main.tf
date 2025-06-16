@@ -1,47 +1,91 @@
 # terraform/main.tf
 
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "2.12.1"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "2.23.0"
+    }
+  }
+}
+
 provider "aws" {
   region = "ap-northeast-2"
 }
 
-# ✨ 외부에서 GitHub Actions Runner의 IP를 받기 위한 변수 정의 ✨
-variable "runner_ip" {
-  description = "The public IP of the GitHub Actions runner for SSH access"
-  type        = string
+# EKS 클러스터와 통신하기 위한 설정
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
 }
 
-# --- 1. 네트워크 (VPC) ---
+# Helm 차트 배포를 위한 설정
+provider "helm" {
+  kubernetes {
+    host                   = module.eks.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
+      command     = "aws"
+    }
+  }
+}
+
+# --- 1. GitHub Actions 연동을 위한 IAM OIDC 및 역할 ---
+data "aws_iam_policy_document" "github_actions_assume_role" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [module.eks.oidc_provider_arn]
+    }
+    
+    # (선택적 보안 강화) 특정 GitHub 저장소 및 브랜치만 허용
+    # condition {
+    #   test     = "StringEquals"
+    #   variable = "${module.eks.oidc_provider}:sub"
+    #   values   = ["repo:COZYNobell/my-website:ref:refs/heads/main"]
+    # }
+  }
+}
+
+resource "aws_iam_role" "github_actions_role" {
+  name               = "GitHubActionsAdminRoleForEKS"
+  assume_role_policy = data.aws_iam_policy_document.github_actions_assume_role.json
+}
+
+resource "aws_iam_role_policy_attachment" "admin_access" {
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+  role       = aws_iam_role.github_actions_role.name
+}
+
+# --- 2. 네트워크 (VPC) ---
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.5.2"
   # ... (이전 VPC 설정과 동일)
 }
 
-# --- 2. EKS 클러스터 ---
+# --- 3. EKS 클러스터 ---
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "20.8.4"
   # ... (이전 EKS 설정과 동일)
+  
+  # IAM OIDC 공급자 활성화
+  enable_irsa = true
 }
 
-# ✨ EKS 워커 노드(EC2)를 위한 보안 그룹 (수정) ✨
-resource "aws_security_group" "eks_nodes_sg" {
-  name        = "my-eks-nodes-sg"
-  description = "Security group for EKS worker nodes"
-  vpc_id      = module.vpc.vpc_id
-
-  # ✨ SSH 접속 규칙 소스를 'runner_ip' 변수로 지정 ✨
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["${var.runner_ip}/32"] # 이 워크플로우를 실행하는 Runner의 IP만 허용
-    description = "Allow SSH from GitHub Actions Runner"
-  }
-
-  # ... (이하 다른 ingress 및 egress 규칙은 이전과 동일하게 유지)
-
-  tags = {
-    Name = "my-eks-nodes-sg"
-  }
-}
+# --- 4. RDS 데이터베이스 ---
+# ... (이전 RDS 리소스 정의와 동일)

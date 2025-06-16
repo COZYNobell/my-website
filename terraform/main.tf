@@ -6,62 +6,38 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-    helm = {
-      source  = "hashicorp/helm"
-      version = "2.12.1"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "2.23.0"
-    }
   }
 }
 
 provider "aws" {
-  region = "ap-northeast-2"
+  region = var.aws_region
 }
 
-# EKS 클러스터와 통신하기 위한 설정
-provider "kubernetes" {
-  host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+# 1. GitHub Actions 연동을 위한 IAM OIDC 및 역할
+resource "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
 }
 
-# Helm 차트 배포를 위한 설정
-provider "helm" {
-  kubernetes {
-    host                   = module.eks.cluster_endpoint
-    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
-    exec {
-      api_version = "client.authentication.k8s.io/v1beta1"
-      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
-      command     = "aws"
-    }
-  }
-}
-
-# --- 1. GitHub Actions 연동을 위한 IAM OIDC 및 역할 ---
 data "aws_iam_policy_document" "github_actions_assume_role" {
   statement {
     effect  = "Allow"
     actions = ["sts:AssumeRoleWithWebIdentity"]
-
     principals {
       type        = "Federated"
-      identifiers = [module.eks.oidc_provider_arn]
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
     }
-    
-    # (선택적 보안 강화) 특정 GitHub 저장소 및 브랜치만 허용
-    # condition {
-    #   test     = "StringEquals"
-    #   variable = "${module.eks.oidc_provider}:sub"
-    #   values   = ["repo:COZYNobell/my-website:ref:refs/heads/main"]
-    # }
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.github_repository}:*"]
+    }
   }
 }
 
 resource "aws_iam_role" "github_actions_role" {
-  name               = "GitHubActionsAdminRoleForEKS"
+  name               = "GitHubActionsAdminRole"
   assume_role_policy = data.aws_iam_policy_document.github_actions_assume_role.json
 }
 
@@ -70,22 +46,80 @@ resource "aws_iam_role_policy_attachment" "admin_access" {
   role       = aws_iam_role.github_actions_role.name
 }
 
-# --- 2. 네트워크 (VPC) ---
+# 2. 네트워크 (VPC)
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.5.2"
-  # ... (이전 VPC 설정과 동일)
+  name    = "my-eks-vpc"
+  cidr    = "10.0.0.0/16"
+  azs             = ["${var.aws_region}a", "${var.aws_region}b", "${var.aws_region}c"]
+  private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+  enable_nat_gateway = true
+  single_nat_gateway = true
+  public_subnet_tags = {
+    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    "kubernetes.io/role/elb"                      = "1"
+  }
+  private_subnet_tags = {
+    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    "kubernetes.io/role/internal-elb"             = "1"
+  }
 }
 
-# --- 3. EKS 클러스터 ---
+# 3. EKS 클러스터
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "20.8.4"
-  # ... (이전 EKS 설정과 동일)
-  
-  # IAM OIDC 공급자 활성화
-  enable_irsa = true
+  cluster_name    = var.cluster_name
+  cluster_version = "1.29"
+  vpc_id          = module.vpc.vpc_id
+  subnet_ids      = module.vpc.private_subnets
+  enable_irsa     = true
+  eks_managed_node_groups = {
+    default = {
+      min_size     = 1
+      max_size     = 3
+      desired_size = 2
+      instance_types = ["t3.medium"]
+    }
+  }
 }
 
-# --- 4. RDS 데이터베이스 ---
-# ... (이전 RDS 리소스 정의와 동일)
+# 4. RDS 데이터베이스
+resource "aws_db_subnet_group" "app_rds_subnet_group" {
+  name       = "app-rds-subnet-group"
+  subnet_ids = module.vpc.private_subnets
+}
+
+resource "aws_security_group" "rds_sg" {
+  name   = "app-rds-access-sg"
+  vpc_id = module.vpc.vpc_id
+  ingress {
+    from_port       = 3306
+    to_port         = 3306
+    protocol        = "tcp"
+    security_groups = [module.eks.node_security_group_id]
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_db_instance" "app_db" {
+  identifier           = "weather-app-db"
+  allocated_storage    = 20
+  engine               = "mysql"
+  engine_version       = "8.0"
+  instance_class       = "db.t3.micro"
+  db_name              = var.db_name
+  username             = var.db_username
+  password             = var.db_password
+  db_subnet_group_name = aws_db_subnet_group.app_rds_subnet_group.name
+  vpc_security_group_ids = [aws_security_group.rds_sg.id]
+  skip_final_snapshot  = true
+}
+

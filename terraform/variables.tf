@@ -1,25 +1,17 @@
-variable "db_name_seoul" {
+variable "aws_region" {
+  description = "AWS 리전을 지정합니다."
   type        = string
-  description = "Database name for Seoul"
+  default     = "ap-northeast-2"
 }
 
-variable "db_name_tokyo" {
+variable "cluster_name" {
+  description = "EKS 클러스터 이름입니다."
   type        = string
-  description = "Database name for Tokyo"
+  default     = "weather-cluster"
 }
 
-variable "db_user" {
+variable "key_pair_name" {
+  description = "EC2 노드 접속을 위한 SSH 키 페어 이름"
   type        = string
-  description = "Database username"
-}
-
-variable "db_password" {
-  type        = string
-  sensitive   = true
-  description = "Database password"
-}
-
-variable "route53_zone_id" {
-  type        = string
-  description = "Route53 Hosted Zone ID"
+  default     = "Seoul-ec22-key.pem" # 본인이 만든 키 페어 이름으로 변경 가능
 }

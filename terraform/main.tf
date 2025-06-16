@@ -46,10 +46,10 @@ module "vpc" {
 # --- 3. EKS 클러스터 (✨ 충돌 방지 설정 추가) ---
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "20.0.0"
+  version = "20.8.4"
 
   cluster_name    = "my-weather-app-cluster"
-  cluster_version = "1.28"
+  cluster_version = "1.29"
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
@@ -66,7 +66,7 @@ module "eks" {
       desired_size = 2
 
       instance_type = "t3.medium"
-      key_name      = "Seoul-ec22-key"
+      key_name      = "Seoul-ec22-key.pem"
     }
   }
 }

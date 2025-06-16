@@ -1,0 +1,51 @@
+name: Alpha: CI/CD Pipeline with Terraform and EKS
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform: apply (create/update) or destroy'
+        required: true
+        default: 'apply'
+
+jobs:
+  provision-infra-seoul:
+    name: 'Alpha Phase 1: Terraform Infra - Seoul'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    outputs:
+      rds_endpoint: ${{ steps.tf.outputs.rds_endpoint }}
+      iam_role_arn: ${{ steps.tf.outputs.github_actions_role_arn }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
+          aws-region: ap-northeast-2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Init (Seoul Env)
+        run: terraform -chdir=envs/seoul init
+
+      - name: Terraform Apply
+        id: tf
+        if: github.event.inputs.action == 'apply'
+        run: |
+          terraform -chdir=envs/seoul apply -auto-approve -json -var="db_password=${{ secrets.DB_PASSWORD_SEOUL }}" \
+            | tee apply-seoul.json
+
+          echo "rds_endpoint=$(jq -r '.outputs.rds_endpoint.value' apply-seoul.json)" >> $GITHUB_OUTPUT
+          echo "github_actions_role_arn=$(jq -r '.outputs.github_actions_role_arn.value' apply-seoul.json)" >> $GITHUB_OUTPUT
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        run: terraform -chdir=envs/seoul destroy -auto-approve -var="db_password=${{ secrets.DB_PASSWORD_SEOUL }}"

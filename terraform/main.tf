@@ -1,21 +1,61 @@
-# 이 파일은 AWS 공급자 설정과 변수를 정의합니다.
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
+# terraform/main.tf
 
 provider "aws" {
   region = "ap-northeast-2"
 }
 
-# --- 1. 네트워크 (VPC) 생성 ---
+# --- ✨ 1. GitHub Actions 연동을 위한 IAM OIDC 및 역할 생성 ✨ ---
+
+# GitHub Actions를 신뢰하는 IAM OIDC 자격 증명 공급자 생성
+# 이 리소스는 AWS 계정당 한 번만 생성하면 됩니다.
+resource "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
+
+  client_id_list = [
+    "sts.amazonaws.com",
+  ]
+
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"] # GitHub OIDC의 공식 Thumbprint
+}
+
+# GitHub Actions 워크플로우가 수임할 IAM 역할 생성
+resource "aws_iam_role" "github_actions_role" {
+  name = "GitHubActionsAdminRole" # 역할 이름
+
+  # 신뢰 정책: 특정 GitHub 저장소에서만 이 역할을 수임하도록 허용
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Principal = {
+          Federated = aws_iam_openid_connect_provider.github.arn
+        },
+        Action = "sts:AssumeRoleWithWebIdentity",
+        Condition = {
+          StringLike = {
+            # "token.actions.githubusercontent.com:sub"은 토큰의 주체를 의미합니다.
+            # "repo:조직/저장소이름:*" 형식으로 지정하여, 특정 저장소의 모든 브랜치/태그에서 실행되는 워크플로우를 신뢰합니다.
+            "token.actions.githubusercontent.com:sub" = "repo:COZYNobell/my-website:*"
+          }
+        }
+      }
+    ]
+  })
+}
+
+# 생성한 역할에 관리자 권한 정책 연결
+# (주의: 실제 운영 환경에서는 EKS, ECR 등에 필요한 최소 권한만 부여하는 것이 안전합니다.)
+resource "aws_iam_role_policy_attachment" "admin_access" {
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+  role       = aws_iam_role.github_actions_role.name
+}
+
+
+# --- 2. 네트워크 (VPC) ---
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "5.5.2"
+  version = "5.0.0"
 
   name = "my-eks-vpc"
   cidr = "10.0.0.0/16"
@@ -38,80 +78,37 @@ module "vpc" {
   }
 }
 
-# --- 2. EKS 클러스터 생성 ---
+# --- 3. EKS 클러스터 ---
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "20.8.4"
+  version = "20.0.0"
 
   cluster_name    = "my-weather-app-cluster"
-  cluster_version = "1.29"
+  cluster_version = "1.28"
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
   eks_managed_node_groups = {
-    default = {
+    standard_workers = {
       min_size     = 1
       max_size     = 3
       desired_size = 2
-      instance_types = ["t3.medium"]
-      key_name      = "Seoul-ec22-key" # ✨ 워커 노드(EC2)에 접속할 키 페어 이름
+
+      instance_type = "t3.medium"
+      key_name      = "Seoul-ec22-key"
     }
   }
 }
 
-# --- 3. RDS 데이터베이스 생성 ---
-# RDS가 사용할 DB 서브넷 그룹 생성
-resource "aws_db_subnet_group" "app_rds_subnet_group" {
-  name       = "app-rds-subnet-group"
-  subnet_ids = module.vpc.private_subnets # 프라이빗 서브넷에 배치
+# --- 4. 출력 값 ---
+output "github_actions_role_arn" {
+  description = "The ARN of the IAM role for GitHub Actions"
+  value       = aws_iam_role.github_actions_role.arn
 }
 
-# RDS 보안 그룹 생성 (EKS 노드로부터의 접속만 허용)
-resource "aws_security_group" "rds_sg" {
-  name        = "app-rds-access-sg"
-  description = "Allow EKS nodes to access RDS"
-  vpc_id      = module.vpc.vpc_id
-
-  ingress {
-    from_port       = 3306
-    to_port         = 3306
-    protocol        = "tcp"
-    security_groups = [module.eks.node_security_group_id] # EKS 노드 보안 그룹을 소스로 지정
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-# 실제 RDS 인스턴스 생성
-resource "aws_db_instance" "app_db" {
-  identifier           = "weather-app-db"
-  allocated_storage    = 20
-  storage_type         = "gp2"
-  engine               = "mysql"
-  engine_version       = "8.0"
-  instance_class       = "db.t3.micro"
-  db_name              = "master_db"
-  username             = "admin"
-  password             = "mySuperSecurePassword123" # 실제로는 변수나 Secret Manager 사용
-  db_subnet_group_name = aws_db_subnet_group.app_rds_subnet_group.name
-  vpc_security_group_ids = [aws_security_group.rds_sg.id]
-  skip_final_snapshot  = true
-}
-
-# --- 4. 출력 값 정의 ---
-# 생성된 인프라의 중요한 정보들을 출력하여, GitHub Actions의 다음 단계에서 사용
-output "rds_endpoint" {
-  description = "The endpoint of the RDS instance"
-  value       = aws_db_instance.app_db.endpoint
-}
-
-output "rds_db_name" {
-  description = "The name of the database"
-  value = aws_db_instance.app_db.db_name
+output "kubeconfig" {
+  description = "Kubeconfig to connect to the EKS cluster"
+  value       = module.eks.kubeconfig
+  sensitive   = true
 }

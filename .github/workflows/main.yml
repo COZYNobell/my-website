@@ -1,0 +1,102 @@
+name: Full CI/CD Pipeline for Weather App
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  # 1. 애플리케이션 테스트 및 이미지 빌드/푸시
+  build-and-push:
+    name: Build and Push App Image
+    runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.build-image.outputs.image }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }} # OIDC 역할 사용
+          aws-region: ap-northeast-2 
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and push Docker image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: my-node-app
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker build -t $IMAGE_URI -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY --all-tags
+          echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+  # 2. 인프라 프로비저닝 및 애플리케이션 배포
+  provision-and-deploy:
+    name: Provision Infrastructure and Deploy to EKS
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
+          aws-region: ap-northeast-2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Apply (VPC, EKS, RDS, IAM Role)
+        run: |
+          terraform -chdir=terraform init
+          terraform -chdir=terraform apply -auto-approve \
+            -var="db_password=${{ secrets.DB_PASSWORD_SEOUL }}"
+      
+      - name: Install kubectl & Helm
+        run: |
+          # ... (kubectl, helm 설치 스크립트)
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region ap-northeast-2 --name my-weather-app-cluster
+
+      - name: Deploy Addons (LB Controller, Monitoring)
+        run: |
+          # AWS Load Balancer Controller 배포
+          helm repo add eks https://aws.github.io/eks-charts
+          helm repo update
+          helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller -n kube-system --set clusterName=my-weather-app-cluster --set serviceAccount.create=false --set serviceAccount.name=aws-load-balancer-controller --wait
+          
+          # 모니터링 스택 배포
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+          helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack --namespace monitoring --wait
+
+      - name: Create Kubernetes Secrets for App
+        run: |
+          # Terraform 출력값을 사용하여 RDS 접속 정보를 가져오는 로직 추가 필요
+          # 우선은 Secret을 직접 참조하여 Secret 생성
+          kubectl create secret generic app-secrets \
+            --from-literal=DB_HOST=${{ secrets.DB_HOST_SEOUL }} \
+            --from-literal=DB_USER="admin" \
+            --from-literal=DB_PASSWORD=${{ secrets.DB_PASSWORD_SEOUL }} \
+            --from-literal=DB_NAME="master_db" \
+            --from-literal=SESSION_SECRET=${{ secrets.SESSION_SECRET }} \
+            --from-literal=OPENWEATHERMAP_API_KEY=${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }} \
+            --from-literal=MAPS_API_KEY=${{ secrets.MAPS_API_KEY_SECRET }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy Weather App to EKS
+        run: kubectl apply -f k8s/

@@ -1,11 +1,45 @@
 # terraform/main.tf
 
+# -----------------------------------------------------------------------------
+# AWS 공급자 및 Terraform 버전 설정
+# -----------------------------------------------------------------------------
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
 provider "aws" {
   region = var.aws_region
 }
 
-# --- 1. GitHub Actions 연동을 위한 IAM ---
-# (이전과 동일: data "aws_iam_openid_connect_provider" 및 data "aws_iam_role")
+# -----------------------------------------------------------------------------
+# 1. 변수 정의 (Variables)
+# -----------------------------------------------------------------------------
+variable "aws_region" {
+  description = "The AWS region to deploy resources in."
+  type        = string
+  default     = "ap-northeast-2"
+}
+
+variable "cluster_name" {
+  description = "The name of the EKS cluster."
+  type        = string
+  default     = "my-weather-app-cluster"
+}
+
+variable "github_repository" {
+  description = "The GitHub repository (owner/repo) for IAM role trust."
+  type        = string
+  default     = "COZYNobell/my-website"
+}
+
+# -----------------------------------------------------------------------------
+# 2. GitHub Actions 연동을 위한 IAM (기존 리소스 조회)
+# -----------------------------------------------------------------------------
 data "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
 }
@@ -14,15 +48,37 @@ data "aws_iam_role" "github_actions_role" {
   name = "GitHubActionsAdminRole"
 }
 
-# --- 2. 네트워크 (VPC) ---
+# -----------------------------------------------------------------------------
+# 3. 네트워크 (VPC) 생성
+# -----------------------------------------------------------------------------
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.5.2"
-  name    = "my-eks-vpc"
-  # ... (이하 VPC 설정은 이전과 동일하게 유지)
+
+  name = "my-eks-vpc"
+  cidr = "10.0.0.0/16"
+
+  azs             = ["${var.aws_region}a", "${var.aws_region}b", "${var.aws_region}c"]
+  private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+
+  enable_nat_gateway = true
+  single_nat_gateway = true
+
+  public_subnet_tags = {
+    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    "kubernetes.io/role/elb"                      = "1"
+  }
+
+  private_subnet_tags = {
+    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    "kubernetes.io/role/internal-elb"             = "1"
+  }
 }
 
-# --- 3. EKS 클러스터 (✨ 엔드포인트 설정 수정) ---
+# -----------------------------------------------------------------------------
+# 4. EKS 클러스터 생성
+# -----------------------------------------------------------------------------
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "20.8.4"
@@ -33,11 +89,8 @@ module "eks" {
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
-  # ✨ EKS API 서버 엔드포인트 설정 ✨
-  # 퍼블릭 엔드포인트는 활성화하고,
+  # EKS API 서버 엔드포인트를 외부에서 접속할 수 있도록 활성화합니다.
   cluster_endpoint_public_access = true
-  # 프라이빗 엔드포인트는 비활성화하여 외부 접속 문제를 원천적으로 방지합니다.
-  cluster_endpoint_private_access = false
 
   eks_managed_node_groups = {
     default = {
@@ -45,17 +98,15 @@ module "eks" {
       max_size     = 3
       desired_size = 2
       instance_types = ["t3.medium"]
-      key_name       = "Seoul-ec22-key"
+      key_name       = "Seoul-ec22-key" # ✨ 워커 노드(EC2)에 접속할 키 페어 이름
     }
   }
 }
 
-# --- 4. 출력 값 ---
-# (이전과 동일)
+# -----------------------------------------------------------------------------
+# 5. 출력 값 (Outputs)
+# -----------------------------------------------------------------------------
 output "github_actions_role_arn" {
   description = "The ARN of the IAM role for GitHub Actions"
   value       = data.aws_iam_role.github_actions_role.arn
 }
-
-
-# Re-trigger workflow

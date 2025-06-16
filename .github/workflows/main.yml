@@ -1,4 +1,4 @@
-name: Full CI/CD for New Alpha
+name: Full CI/CD for NewNewAlpha
 
 on:
   push:
@@ -107,3 +107,29 @@ jobs:
 
     - name: Deploy App to EKS
       run: kubectl apply -f k8s/
+
+    - name: Deploy Monitoring Stack (Prometheus + Grafana)
+      run: |
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        helm repo update
+        kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+        helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
+          --namespace monitoring --wait
+
+    - name: Deploy AWS Load Balancer Controller
+      run: |
+        helm repo add eks https://aws.github.io/eks-charts
+        helm repo update
+        eksctl create iamserviceaccount \
+          --cluster=my-weather-app-cluster \
+          --namespace=kube-system \
+          --name=aws-load-balancer-controller \
+          --attach-policy-arn=arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:policy/AWSLoadBalancerControllerIAMPolicy \
+          --override-existing-serviceaccounts \
+          --approve
+        helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+          --namespace kube-system \
+          --set clusterName=my-weather-app-cluster \
+          --set serviceAccount.create=false \
+          --set serviceAccount.name=aws-load-balancer-controller \
+          --wait

@@ -1,19 +1,50 @@
-name: Full CI/CD Pipeline with Terraform and EKS
+name: Full CI/CD Pipeline for EKS with Terraform
 
 on:
   push:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      action:
-        description: 'Action to perform: apply (create/update) or destroy'
-        required: true
-        default: 'apply'
 
 jobs:
-  # 1단계 작업: Terraform으로 인프라(VPC, EKS, RDS, IAM) 생성 또는 파기
-  terraform:
+  # 1. 애플리케이션 테스트 및 이미지 빌드/푸시
+  build-and-push:
+    name: Build and Push App Image
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # AWS OIDC 인증을 위해 필요
+      contents: read
+    outputs:
+      image_uri: ${{ steps.build-image.outputs.image }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
+          aws-region: ap-northeast-2
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: my-node-app
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI_WITH_SHA=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          IMAGE_URI_LATEST=$ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker build -t $IMAGE_URI_WITH_SHA -t $IMAGE_URI_LATEST .
+          docker push --all-tags $ECR_REGISTRY/$ECR_REPOSITORY
+          echo "image=$IMAGE_URI_WITH_SHA" >> $GITHUB_OUTPUT
+
+  # 2. Terraform으로 인프라 생성/업데이트
+  provision-infra:
     name: 'Terraform: Provision Infrastructure'
     runs-on: ubuntu-latest
     permissions:
@@ -21,8 +52,7 @@ jobs:
       contents: read
     outputs:
       rds_endpoint: ${{ steps.apply.outputs.rds_endpoint }}
-      rds_db_name: ${{ steps.apply.outputs.rds_db_name }}
-      iam_role_arn: ${{ steps.apply.outputs.github_actions_role_arn }}
+      db_name: ${{ steps.apply.outputs.db_name }}
 
     steps:
     - name: Checkout
@@ -31,10 +61,7 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        # 이 단계에서는 아직 IAM 역할이 없을 수 있으므로, 초기에는 액세스 키를 사용합니다.
-        # 역할 생성 후에는 이 부분을 role-to-assume으로 변경할 수 있습니다.
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
         aws-region: ap-northeast-2
 
     - name: Setup Terraform
@@ -46,27 +73,17 @@ jobs:
     - name: Terraform Apply
       id: apply
       run: |
-        if [ "${{ github.event.inputs.action }}" == 'apply' ] || [ "${{ github.event_name }}" == 'push' ]; then
-          terraform -chdir=terraform apply -auto-approve -json \
-            -var="db_password=${{ secrets.DB_PASSWORD_SEOUL }}" | tee apply.json
-          
-          # Terraform 출력값을 GitHub Actions 출력 변수로 설정
-          echo "rds_endpoint=$(jq -r '.outputs.rds_endpoint.value' apply.json)" >> $GITHUB_OUTPUT
-          echo "rds_db_name=$(jq -r '.outputs.rds_db_name.value' apply.json)" >> $GITHUB_OUTPUT
-          echo "github_actions_role_arn=$(jq -r '.outputs.github_actions_role_arn.value' apply.json)" >> $GITHUB_OUTPUT
-        fi
-      if: github.event.inputs.action == 'apply' || github.event_name == 'push'
+        terraform -chdir=terraform apply -auto-approve -json \
+          -var="db_password=${{ secrets.DB_PASSWORD_SEOUL }}" | tee apply.json
+        
+        echo "rds_endpoint=$(jq -r '.outputs.rds_endpoint.value' apply.json)" >> $GITHUB_OUTPUT
+        echo "db_name=$(jq -r '.outputs.db_name.value' apply.json)" >> $GITHUB_OUTPUT
 
-    - name: Terraform Destroy
-      run: terraform -chdir=terraform destroy -auto-approve -no-color -var="db_password=${{ secrets.DB_PASSWORD_SEOUL }}"
-      if: github.event.inputs.action == 'destroy'
-      
-  # 2단계 작업: 생성된 EKS 클러스터에 애플리케이션 및 모니터링 배포
+  # 3. 생성된 EKS 클러스터에 앱 및 모니터링 배포
   deploy-to-eks:
     name: 'Deploy Apps to EKS'
     runs-on: ubuntu-latest
-    needs: [terraform]
-    if: github.event.inputs.action == 'apply' || github.event_name == 'push'
+    needs: [build-and-push, provision-infra] # 빌드와 인프라 작업이 모두 끝나야 실행
     permissions:
       id-token: write
       contents: read
@@ -74,18 +91,11 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-    
-    - name: Build and Push Docker Image to ECR
-      uses: aws-actions/amazon-ecr-login@v2
-      id: login-ecr
-    - run: |
-        docker build -t ${{ steps.login-ecr.outputs.registry }}/my-node-app:${{ github.sha }} -t ${{ steps.login-ecr.outputs.registry }}/my-node-app:latest .
-        docker push --all-tags ${{ steps.login-ecr.outputs.registry }}/my-node-app
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: ${{ needs.terraform.outputs.iam_role_arn }} # Terraform이 만든 IAM 역할 수임
+        role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
         aws-region: ap-northeast-2
     
     - name: Install Utilities (kubectl, helm)
@@ -95,24 +105,24 @@ jobs:
     - name: Update kubeconfig
       run: aws eks update-kubeconfig --region ap-northeast-2 --name my-weather-app-cluster
 
-    - name: Deploy Addons (LB Controller, Monitoring)
+    - name: Deploy Addons & Apps
       run: |
-        # ... (helm을 사용한 kube-prometheus-stack, aws-load-balancer-controller 배포 스크립트)
+        # Monitoring Stack 배포
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        helm repo update
+        kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+        helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack --namespace monitoring --wait
 
-    - name: Update Kubernetes manifests
-      # 이미지 태그, RDS 접속 정보 등을 k8s 파일에 동적으로 업데이트
-      run: |
-        sed -i 's|image: .*|image: ${{ steps.login-ecr.outputs.registry }}/my-node-app:${{ github.sha }}|' k8s/app-deployment.yaml
-        
+        # Create Kubernetes Secret for App
         kubectl create secret generic app-secrets -n weather-app \
-          --from-literal=DB_HOST=${{ needs.terraform.outputs.db_host }} \
+          --from-literal=DB_HOST=${{ needs.provision-infra.outputs.db_host }} \
           --from-literal=DB_USER="admin" \
           --from-literal=DB_PASSWORD=${{ secrets.DB_PASSWORD_SEOUL }} \
-          --from-literal=DB_NAME=${{ needs.terraform.outputs.db_name }} \
+          --from-literal=DB_NAME=${{ needs.provision-infra.outputs.db_name }} \
           --from-literal=SESSION_SECRET=${{ secrets.SESSION_SECRET }} \
           --from-literal=OPENWEATHERMAP_API_KEY=${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }} \
           --from-literal=MAPS_API_KEY=${{ secrets.MAPS_API_KEY_SECRET }} \
           --dry-run=client -o yaml | kubectl apply -f -
-
-    - name: Deploy Weather App to EKS
-      run: kubectl apply -f k8s/
+        
+        # Deploy Weather App
+        kubectl apply -f k8s/

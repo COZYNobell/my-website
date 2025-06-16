@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # 1. 애플리케이션 테스트 및 이미지 빌드/푸시
+  # 1단계 작업: Docker 이미지 빌드 및 푸시
   build-and-push:
     name: Build and Push App Image
     runs-on: ubuntu-latest
@@ -43,13 +43,16 @@ jobs:
           docker push --all-tags $ECR_REGISTRY/$ECR_REPOSITORY
           echo "image=$IMAGE_URI_WITH_SHA" >> $GITHUB_OUTPUT
 
-  # 2. Terraform으로 인프라 생성/업데이트
+  # 2단계 작업: Terraform으로 인프라 생성/업데이트
   provision-infra:
     name: 'Terraform: Provision Infrastructure'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
+    outputs:
+      rds_endpoint: ${{ steps.apply.outputs.rds_endpoint }}
+      rds_db_name: ${{ steps.apply.outputs.rds_db_name }}
 
     steps:
     - name: Checkout
@@ -68,13 +71,24 @@ jobs:
       run: terraform -chdir=terraform init
 
     - name: Terraform Apply
-      run: terraform -chdir=terraform apply -auto-approve
-      
-  # 3. 생성된 EKS 클러스터에 앱 및 모니터링 배포
+      id: apply
+      run: |
+        terraform -chdir=terraform apply -auto-approve -json \
+          -var="db_password=${{ secrets.DB_PASSWORD_SEOUL }}" | tee apply.json
+        
+        echo "rds_endpoint=$(jq -r '.outputs.rds_endpoint.value' apply.json)" >> $GITHUB_OUTPUT
+        echo "rds_db_name=$(jq -r '.outputs.rds_db_name.value' apply.json)" >> $GITHUB_OUTPUT
+
+  # 3단계 작업: 생성된 EKS 클러스터에 앱 및 모니터링 배포
   deploy-to-eks:
     name: 'Deploy Apps to EKS'
     runs-on: ubuntu-latest
     needs: [build-and-push, provision-infra] # 빌드와 인프라 작업이 모두 끝나야 실행
+    
+    # ✨ 이 권한 블록이 추가되었습니다! ✨
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
     - name: Checkout
@@ -88,11 +102,34 @@ jobs:
     
     - name: Install Utilities (kubectl, helm)
       run: |
-        # ... (이전과 동일한 kubectl, helm 설치 스크립트)
+        # kubectl 설치
+        curl -o kubectl https://s3.us-west-2.amazonaws.com/amazon-eks/1.28.5/2024-01-04/bin/linux/amd64/kubectl
+        chmod +x ./kubectl && sudo mv ./kubectl /usr/local/bin/
+        # Helm 설치
+        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        chmod 700 get_helm.sh && ./get_helm.sh
 
     - name: Update kubeconfig
       run: aws eks update-kubeconfig --region ap-northeast-2 --name my-weather-app-cluster
 
     - name: Deploy Addons & Apps
       run: |
-        # ... (이전과 동일한 모니터링 스택 및 날씨 앱 배포 스크립트)
+        # Monitoring Stack 배포
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        helm repo update
+        kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+        helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack --namespace monitoring --wait
+
+        # Create Kubernetes Secret for App
+        kubectl create secret generic app-secrets -n weather-app \
+          --from-literal=DB_HOST=${{ needs.provision-infra.outputs.db_host }} \
+          --from-literal=DB_USER="admin" \
+          --from-literal=DB_PASSWORD=${{ secrets.DB_PASSWORD_SEOUL }} \
+          --from-literal=DB_NAME=${{ needs.provision-infra.outputs.db_name }} \
+          --from-literal=SESSION_SECRET=${{ secrets.SESSION_SECRET }} \
+          --from-literal=OPENWEATHERMAP_API_KEY=${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }} \
+          --from-literal=MAPS_API_KEY=${{ secrets.MAPS_API_KEY_SECRET }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Deploy Weather App
+        kubectl apply -f k8s/

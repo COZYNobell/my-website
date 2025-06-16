@@ -1,21 +1,23 @@
-name: Full CI/CD Pipeline with Terraform and EKS
+name: Provision Infrastructure and Deploy Applications
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
+  workflow_dispatch: # Actions 탭에서 수동으로 실행 가능
 
 jobs:
-  # 1단계 작업: Docker 이미지 빌드 및 푸시
-  build-and-push:
-    name: Build and Push App Image
+  # 1단계: Terraform으로 모든 인프라(VPC, EKS, IAM 등) 생성/업데이트
+  provision-infrastructure:
+    name: "Phase 1: Provision Infrastructure with Terraform"
     runs-on: ubuntu-latest
     permissions:
-      id-token: write # AWS OIDC 인증을 위해 필요
+      id-token: write # OIDC 인증을 위해 필요
       contents: read
     outputs:
-      image_uri: ${{ steps.build-image.outputs.image }}
+      # 다음 작업을 위해 Terraform 출력값을 전달합니다.
+      cluster_name: ${{ steps.apply.outputs.cluster_name }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,110 +28,66 @@ jobs:
           role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
           aws-region: ap-northeast-2
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.7
 
-      - name: Build and push Docker image
-        id: build-image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: my-node-app
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Terraform Init
+        run: terraform -chdir=terraform init
+
+      - name: Terraform Apply
+        id: apply
         run: |
-          IMAGE_URI_WITH_SHA=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          IMAGE_URI_LATEST=$ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker build -t $IMAGE_URI_WITH_SHA -t $IMAGE_URI_LATEST .
-          docker push --all-tags $ECR_REGISTRY/$ECR_REPOSITORY
-          echo "image=$IMAGE_URI_WITH_SHA" >> $GITHUB_OUTPUT
+          terraform -chdir=terraform apply -auto-approve -json | tee apply.json
+          # 생성된 클러스터 이름을 출력으로 설정
+          CLUSTER_NAME=$(jq -r '.outputs.cluster_name.value' apply.json)
+          echo "cluster_name=$CLUSTER_NAME" >> $GITHUB_OUTPUT
 
-  # 2단계 작업: Terraform으로 인프라 생성/업데이트
-  provision-infra:
-    name: 'Terraform: Provision Infrastructure'
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    outputs:
-      rds_endpoint: ${{ steps.apply.outputs.rds_endpoint }}
-      rds_db_name: ${{ steps.apply.outputs.rds_db_name }}
-
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
-        aws-region: ap-northeast-2
-
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
-
-    - name: Terraform Init
-      run: terraform -chdir=terraform init
-
-    - name: Terraform Apply
-      id: apply
-      run: |
-        terraform -chdir=terraform apply -auto-approve -json \
-          -var="db_password=${{ secrets.DB_PASSWORD_SEOUL }}" | tee apply.json
-        
-        echo "rds_endpoint=$(jq -r '.outputs.rds_endpoint.value' apply.json)" >> $GITHUB_OUTPUT
-        echo "rds_db_name=$(jq -r '.outputs.rds_db_name.value' apply.json)" >> $GITHUB_OUTPUT
-
-  # 3단계 작업: 생성된 EKS 클러스터에 앱 및 모니터링 배포
+  # 2단계: 생성된 EKS 클러스터에 애플리케이션 및 모니터링 배포
   deploy-to-eks:
-    name: 'Deploy Apps to EKS'
+    name: "Phase 2: Deploy Applications to EKS"
     runs-on: ubuntu-latest
-    needs: [build-and-push, provision-infra] # 빌드와 인프라 작업이 모두 끝나야 실행
-    
-    # ✨ 이 권한 블록이 추가되었습니다! ✨
+    needs: [provision-infrastructure] # 인프라 생성이 성공해야 실행
     permissions:
       id-token: write
       contents: read
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
-        aws-region: ap-northeast-2
-    
-    - name: Install Utilities (kubectl, helm)
-      run: |
-        # kubectl 설치
-        curl -o kubectl https://s3.us-west-2.amazonaws.com/amazon-eks/1.28.5/2024-01-04/bin/linux/amd64/kubectl
-        chmod +x ./kubectl && sudo mv ./kubectl /usr/local/bin/
-        # Helm 설치
-        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-        chmod 700 get_helm.sh && ./get_helm.sh
+      - name: Build and Push Docker Image to ECR
+        # Docker 이미지 빌드 및 ECR 푸시 로직
+        id: build-image
+        uses: aws-actions/amazon-ecr-login@v2
+      - run: |
+          docker build -t ${{ steps.login-ecr.outputs.registry }}/my-node-app:latest .
+          docker push ${{ steps.login-ecr.outputs.registry }}/my-node-app:latest
 
-    - name: Update kubeconfig
-      run: aws eks update-kubeconfig --region ap-northeast-2 --name my-weather-app-cluster
+      - name: Configure AWS credentials & Kubeconfig
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
+          aws-region: ap-northeast-2
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region ap-northeast-2 --name ${{ needs.provision-infrastructure.outputs.cluster_name }}
 
-    - name: Deploy Addons & Apps
-      run: |
-        # Monitoring Stack 배포
-        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-        helm repo update
-        kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-        helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack --namespace monitoring --wait
+      - name: Install Helm
+        run: |
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod 700 get_helm.sh && ./get_helm.sh
 
-        # Create Kubernetes Secret for App
-        kubectl create secret generic app-secrets -n weather-app \
-          --from-literal=DB_HOST=${{ needs.provision-infra.outputs.db_host }} \
-          --from-literal=DB_USER="admin" \
-          --from-literal=DB_PASSWORD=${{ secrets.DB_PASSWORD_SEOUL }} \
-          --from-literal=DB_NAME=${{ needs.provision-infra.outputs.db_name }} \
-          --from-literal=SESSION_SECRET=${{ secrets.SESSION_SECRET }} \
-          --from-literal=OPENWEATHERMAP_API_KEY=${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }} \
-          --from-literal=MAPS_API_KEY=${{ secrets.MAPS_API_KEY_SECRET }} \
-          --dry-run=client -o yaml | kubectl apply -f -
-        
-        # Deploy Weather App
-        kubectl apply -f k8s/
+      - name: Deploy Monitoring Stack (Prometheus & Grafana)
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+          helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
+            --namespace monitoring \
+            --set grafana.adminPassword='${{ secrets.GRAFANA_ADMIN_PASSWORD }}' \
+            --wait
+
+      - name: Deploy Weather App
+        run: echo "To be implemented: kubectl apply -f k8s/..."
+

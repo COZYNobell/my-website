@@ -11,7 +11,7 @@ data "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
 }
 
-# ✨ 'resource' 대신 'data'를 사용하여, 수동으로 생성한 IAM 역할을 이름으로 조회합니다. ✨
+# 수동으로 생성한 IAM 역할을 이름으로 조회합니다.
 data "aws_iam_role" "github_actions_role" {
   name = "GitHubActionsAdminRole"
 }
@@ -72,8 +72,5 @@ output "github_actions_role_arn" {
   value       = data.aws_iam_role.github_actions_role.arn
 }
 
-output "kubeconfig" {
-  description = "Kubeconfig to connect to the EKS cluster"
-  value       = module.eks.kubeconfig
-  sensitive   = true
-}
+# ✨ 오류를 발생시키는 kubeconfig 출력 블록을 제거했습니다. ✨
+# 이 정보는 워크플로우의 'aws eks update-kubeconfig' 스텝을 통해 자동으로 처리됩니다.

@@ -4,15 +4,20 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'terraform/**'
+      - 'k8s/**'
+      - 'server.js' # 애플리케이션 코드 변경 시에도 실행
+      - 'public/**'
   workflow_dispatch:
     inputs:
       action:
-        description: 'Action to perform: apply or destroy'
+        description: 'Action to perform: apply (create/update) or destroy'
         required: true
         default: 'apply'
 
 jobs:
-  # 1단계: Terraform으로 인프라(VPC, EKS, RDS, IAM) 생성 또는 파기
+  # 1단계: Terraform으로 모든 인프라(VPC, EKS, RDS, IAM) 생성 또는 파기
   provision-infra:
     name: 'Phase 1: Provision Infrastructure with Terraform'
     runs-on: ubuntu-latest
@@ -23,6 +28,7 @@ jobs:
       # 다음 작업을 위해 Terraform 출력값을 전달합니다.
       rds_endpoint: ${{ steps.apply.outputs.rds_endpoint }}
       db_name: ${{ steps.apply.outputs.db_name }}
+      iam_role_arn: ${{ steps.apply.outputs.github_actions_role_arn }}
 
     steps:
     - name: Checkout Code
@@ -31,6 +37,9 @@ jobs:
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
+        # 이 단계는 수동으로 생성한 역할 ARN을 사용하거나,
+        # 초기 실행 시에는 Access Key를 사용하여 Terraform이 역할을 만들게 할 수 있습니다.
+        # 지금은 역할이 이미 있다고 가정합니다.
         role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
         aws-region: ap-northeast-2
 
@@ -51,7 +60,8 @@ jobs:
         
         # Terraform 출력값을 GitHub Actions 출력 변수로 설정
         echo "rds_endpoint=$(jq -r '.outputs.rds_endpoint.value' apply.json)" >> $GITHUB_OUTPUT
-        echo "db_name=$(jq -r '.outputs.db_name.value' apply.json)" >> $GITHUB_OUTPUT
+        echo "db_name=$(jq -r '.outputs.rds_db_name.value' apply.json)" >> $GITHUB_OUTPUT
+        echo "github_actions_role_arn=$(jq -r '.outputs.github_actions_role_arn.value' apply.json)" >> $GITHUB_OUTPUT
 
     - name: Terraform Destroy
       if: github.event.inputs.action == 'destroy'
@@ -70,26 +80,19 @@ jobs:
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
-
+    
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
+        role-to-assume: ${{ needs.provision-infra.outputs.iam_role_arn }} # Terraform이 만든 IAM 역할 수임
         aws-region: ap-northeast-2
-    
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
-    
-    - name: Build and Push Docker Image
+
+    - name: Build and Push Docker Image to ECR
       id: build-image
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: my-node-app
-        IMAGE_TAG: ${{ github.sha }}
-      run: |
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
-        docker push --all-tags $ECR_REGISTRY/$ECR_REPOSITORY
+      uses: aws-actions/amazon-ecr-login@v2
+    - run: |
+        docker build -t ${{ steps.build-image.outputs.registry }}/my-node-app:${{ github.sha }} -t ${{ steps.build-image.outputs.registry }}/my-node-app:latest .
+        docker push --all-tags ${{ steps.build-image.outputs.registry }}/my-node-app
     
     - name: Install Utilities (kubectl, helm)
       run: |
@@ -111,7 +114,7 @@ jobs:
         kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
         helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack --namespace monitoring --wait
         
-        # AWS Load Balancer Controller 배포
+        # AWS Load Balancer Controller 배포 (IAM Policy, ServiceAccount 생성 로직은 Terraform으로 이관)
         helm repo add eks https://aws.github.io/eks-charts
         helm repo update
         eksctl create iamserviceaccount \

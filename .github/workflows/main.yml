@@ -1,4 +1,4 @@
-name: Provision and Deploy to EC2
+name: Deploy App and Monitoring to EC2
 
 on:
   push:
@@ -20,10 +20,12 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-northeast-2 
+          aws-region: ap-northeast-2
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+
       - name: Build and push Docker image
         id: build-image
         env:
@@ -52,19 +54,17 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-northeast-2
 
-      - name: Setup SSH Key for Ansible
-        id: setup_key
+      - name: Setup SSH Key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_DEPLOY_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          echo "key_path=~/.ssh/deploy_key" >> $GITHUB_OUTPUT
 
       - name: Run Ansible Playbooks
         run: |
-          # ✨ --private-key 옵션으로 방금 만든 키 파일을 명확히 지정하여 실행합니다.
-          ansible-playbook -i ansible/inventory.ini --private-key ${{ steps.setup_key.outputs.key_path }} ansible/setup-ec2-base.yaml --verbose
-          ansible-playbook -i ansible/inventory.ini --private-key ${{ steps.setup_key.outputs.key_path }} ansible/setup-monitoring.yaml --verbose
+          # ✨ ansible-playbook 명령어에 ssh-common-args를 직접 추가하여 호스트 키 검증을 비활성화합니다. ✨
+          ansible-playbook -i ansible/inventory.ini --private-key ~/.ssh/deploy_key ansible/setup-ec2-base.yaml --ssh-common-args='-o StrictHostKeyChecking=no' --verbose
+          ansible-playbook -i ansible/inventory.ini --private-key ~/.ssh/deploy_key ansible/setup-monitoring.yaml --ssh-common-args='-o StrictHostKeyChecking=no' --verbose
 
       - name: Deploy Application Container
         uses: appleboy/ssh-action@v1.0.3
@@ -72,5 +72,30 @@ jobs:
           host: ${{ secrets.EC2_HOST_SEOUL }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_DEPLOY_KEY }}
+          # appleboy/ssh-action은 자체적으로 호스트 키 검증을 처리하는 옵션이 있지만,
+          # Ansible 접속을 위해 전역적으로 설정하거나, Ansible 명령어에 직접 옵션을 주는 것이 더 확실합니다.
           script: |
-            # ... (이전과 동일한 애플리케이션 배포 스크립트)
+            # 애플리케이션 배포 스크립트 (이전과 동일)
+            CONTAINER_NAME="seoul-app-prod"
+            IMAGE_URI="${{ needs.build.outputs.image_uri }}"
+
+            aws ecr get-login-password --region ap-northeast-2 | sudo docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
+            
+            sudo docker pull $IMAGE_URI
+            if [ "$(sudo docker ps -q -f name=$CONTAINER_NAME)" ]; then sudo docker stop $CONTAINER_NAME; fi
+            if [ "$(sudo docker ps -aq -f name=$CONTAINER_NAME)" ]; then sudo docker rm $CONTAINER_NAME; fi
+            
+            sudo docker run -d -p 80:3000 --name $CONTAINER_NAME --restart always \
+              -e NODE_ENV="production" \
+              -e DB_HOST="${{ secrets.DB_HOST_SEOUL }}" \
+              -e DB_USER="${{ secrets.DB_USER_SEOUL }}" \
+              -e DB_PASSWORD="${{ secrets.DB_PASSWORD_SEOUL }}" \
+              -e DB_NAME="${{ secrets.DB_NAME_SEOUL }}" \
+              -e SESSION_SECRET="${{ secrets.SESSION_SECRET }}" \
+              -e OPENWEATHERMAP_API_KEY_SECRET="${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }}" \
+              -e MAPS_API_KEY_SECRET="${{ secrets.MAPS_API_KEY_SECRET }}" \
+              -e SNS_TOPIC_ARN="${{ secrets.SNS_TOPIC_ARN }}" \
+              $IMAGE_URI
+            
+            echo "✅ Seoul EC2 deployment complete!"
+            sudo docker logs --tail 50 $CONTAINER_NAME

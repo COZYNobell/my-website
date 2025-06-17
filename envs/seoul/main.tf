@@ -40,7 +40,7 @@ module "alb" {
 
 # 4. Autoscaling 모듈 호출
 module "autoscaling" {
-  source           = "../../modules/autoscaling"
+  source             = "../../modules/autoscaling"
 
   ami_id             = data.aws_ami.amazon_linux.id # 아래 data 블록에서 조회한 AMI ID 사용
   instance_type      = "t3.micro"

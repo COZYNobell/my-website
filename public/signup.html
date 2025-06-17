@@ -1,35 +1,90 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>회원가입</title>
   <style>
-    body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 80vh; background-color: #f4f4f4; }
-    .container { background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); width: 300px; }
-    h1 { text-align: center; margin-bottom: 20px; }
-    label { display: block; margin-bottom: 5px; }
-    input[type="email"], input[type="password"] { width: calc(100% - 20px); padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; }
-    button { width: 100%; padding: 10px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
-    button:hover { background-color: #218838; }
-    .message-box { margin-top: 15px; padding: 10px; border-radius: 4px; text-align: center; font-weight: bold; display: none; }
-    .message-box.error { color: #721c24; background-color: #f8d7da; border: 1px solid #f5c6cb; }
-    .message-box.success { color: #155724; background-color: #d4edda; border: 1px solid #c3e6cb; }
-    .nav-links { margin-top:15px; text-align:center; }
-    .nav-links a { color: #007bff; text-decoration: none; }
+    body {
+      font-family: sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 80vh;
+      background-color: #f4f4f4;
+    }
+    .container {
+      background-color: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+      width: 300px;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+    }
+    input[type="email"],
+    input[type="password"] {
+      width: calc(100% - 20px);
+      padding: 10px;
+      margin-bottom: 15px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #218838;
+    }
+    .message-box {
+      margin-top: 15px;
+      padding: 10px;
+      border-radius: 4px;
+      text-align: center;
+      font-weight: bold;
+    }
+    .message-box.error {
+      color: #721c24;
+      background-color: #f8d7da;
+      border: 1px solid #f5c6cb;
+    }
+    .message-box.success {
+      color: #155724;
+      background-color: #d4edda;
+      border: 1px solid #c3e6cb;
+    }
+    .nav-links {
+      margin-top: 15px;
+      text-align: center;
+    }
+    .nav-links a {
+      color: #007bff;
+      text-decoration: none;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>회원가입</h1>
-    <div id="message-box" class="message-box"></div>
+    <div id="message-box" class="message-box error" style="display: none;"></div>
+    <div id="success-box" class="message-box success" style="display: none;"></div>
 
     <form id="signup-form">
       <label for="email">이메일:</label>
-      <input type="email" id="email" name="email" required>
-
+      <input type="email" id="email" name="email" required />
       <label for="password">비밀번호:</label>
-      <input type="password" id="password" name="password" required>
-
+      <input type="password" id="password" name="password" required />
       <button type="submit">가입하기</button>
     </form>
 
@@ -40,42 +95,45 @@
   </div>
 
   <script>
-    const API_URL = 'https://7bsjoaagma.execute-api.ap-northeast-2.amazonaws.com/test'; // 👈 실제 Gateway 주소로 변경 필요
+    const API_URL = "https://7bsjoaagma.execute-api.ap-northeast-2.amazonaws.com/test";
 
-    document.getElementById('signup-form').addEventListener('submit', async (e) => {
+    document.getElementById("signup-form").addEventListener("submit", async function (e) {
       e.preventDefault();
-      const email = document.getElementById('email').value;
-      const password = document.getElementById('password').value;
-      const messageBox = document.getElementById('message-box');
+
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value.trim();
+      const messageBox = document.getElementById("message-box");
+      const successBox = document.getElementById("success-box");
+
+      messageBox.style.display = "none";
+      successBox.style.display = "none";
 
       try {
         const response = await fetch(API_URL, {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
+            "Content-Type": "application/x-www-form-urlencoded"
           },
           body: new URLSearchParams({
-            action: 'register',
-            email,
-            password
+            action: "register",
+            email: email,
+            password: password
           })
         });
 
-        const result = await response.json();
-        messageBox.style.display = 'block';
+        const data = await response.json();
 
         if (response.status === 201) {
-          messageBox.textContent = `🎉 ${result.message}`;
-          messageBox.className = 'message-box success';
+          successBox.textContent = `${email} 으로 가입되었습니다. 이메일을 확인해주세요.`;
+          successBox.style.display = "block";
         } else {
-          messageBox.textContent = `❌ ${result.message}`;
-          messageBox.className = 'message-box error';
+          messageBox.textContent = data.message || "회원가입 실패";
+          messageBox.style.display = "block";
         }
-
       } catch (err) {
-        messageBox.style.display = 'block';
-        messageBox.textContent = '서버 오류가 발생했습니다.';
-        messageBox.className = 'message-box error';
+        console.error("요청 실패:", err);
+        messageBox.textContent = "서버 오류가 발생했습니다.";
+        messageBox.style.display = "block";
       }
     });
   </script>

@@ -1,69 +1,83 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <title>회원가입</title>
-    <style>
-        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 80vh; background-color: #f4f4f4; }
-        .container { background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); width: 300px; }
-        h1 { text-align: center; margin-bottom: 20px; }
-        label { display: block; margin-bottom: 5px; }
-        input[type="email"], input[type="password"] { width: calc(100% - 20px); padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; }
-        button { width: 100%; padding: 10px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background-color: #218838; }
-        .message-box { margin-top: 15px; padding: 10px; border-radius: 4px; text-align: center; font-weight: bold; }
-        .message-box.error { color: #721c24; background-color: #f8d7da; border: 1px solid #f5c6cb; }
-        /* 🔍 추가된 성공 메시지 스타일 */
-        .message-box.success { color: #155724; background-color: #d4edda; border: 1px solid #c3e6cb; }
-        .nav-links { margin-top:15px; text-align:center; }
-        .nav-links a { color: #007bff; text-decoration: none; }
-    </style>
+  <meta charset="UTF-8">
+  <title>회원가입</title>
+  <style>
+    body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 80vh; background-color: #f4f4f4; }
+    .container { background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); width: 300px; }
+    h1 { text-align: center; margin-bottom: 20px; }
+    label { display: block; margin-bottom: 5px; }
+    input[type="email"], input[type="password"] { width: calc(100% - 20px); padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; }
+    button { width: 100%; padding: 10px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background-color: #218838; }
+    .message-box { margin-top: 15px; padding: 10px; border-radius: 4px; text-align: center; font-weight: bold; display: none; }
+    .message-box.error { color: #721c24; background-color: #f8d7da; border: 1px solid #f5c6cb; }
+    .message-box.success { color: #155724; background-color: #d4edda; border: 1px solid #c3e6cb; }
+    .nav-links { margin-top:15px; text-align:center; }
+    .nav-links a { color: #007bff; text-decoration: none; }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>회원가입</h1>
-        <div id="message-box" class="message-box" style="display: none;"></div>
-        <!-- 🔍 성공 메시지 박스 추가 -->
-        <div id="success-box" class="message-box success" style="display: none;"></div>
+  <div class="container">
+    <h1>회원가입</h1>
+    <div id="message-box" class="message-box"></div>
 
-        <form action="/signup" method="POST">
-            <div>
-                <label for="email">이메일:</label>
-                <input type="email" id="email" name="email" required>
-            </div>
-            <div>
-                <label for="password">비밀번호:</label>
-                <input type="password" id="password" name="password" required>
-            </div>
-            <button type="submit">가입하기</button>
-        </form>
-        <div class="nav-links">
-            <p>이미 계정이 있으신가요? <a href="/login.html">로그인</a></p>
-            <p><a href="/">홈으로</a></p>
-        </div>
+    <form id="signup-form">
+      <label for="email">이메일:</label>
+      <input type="email" id="email" name="email" required>
+
+      <label for="password">비밀번호:</label>
+      <input type="password" id="password" name="password" required>
+
+      <button type="submit">가입하기</button>
+    </form>
+
+    <div class="nav-links">
+      <p>이미 계정이 있으신가요? <a href="/login.html">로그인</a></p>
+      <p><a href="/">홈으로</a></p>
     </div>
-    <script>
-        window.onload = function() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const error = urlParams.get('error');
-            const signup = urlParams.get('signup');
-            const email = urlParams.get('email');
+  </div>
 
-            const messageBox = document.getElementById('message-box');
-            const successBox = document.getElementById('success-box');
+  <script>
+    const API_URL = 'https://7bsjoaagma.execute-api.ap-northeast-2.amazonaws.com/test'; // 👈 실제 Gateway 주소로 변경 필요
 
-            if (error) {
-                messageBox.textContent = decodeURIComponent(error);
-                messageBox.className = 'message-box error';
-                messageBox.style.display = 'block';
-            }
+    document.getElementById('signup-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const messageBox = document.getElementById('message-box');
 
-            // 🔍 가입 성공 메시지 표시
-            if (signup === 'success' && email) {
-                successBox.textContent = `${decodeURIComponent(email)} 으로 가입되었습니다. 이메일로 전송된 SNS 인증 메일을 확인해주세요.`;
-                successBox.style.display = 'block';
-            }
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: new URLSearchParams({
+            action: 'register',
+            email,
+            password
+          })
+        });
+
+        const result = await response.json();
+        messageBox.style.display = 'block';
+
+        if (response.status === 201) {
+          messageBox.textContent = `🎉 ${result.message}`;
+          messageBox.className = 'message-box success';
+        } else {
+          messageBox.textContent = `❌ ${result.message}`;
+          messageBox.className = 'message-box error';
         }
-    </script>
+
+      } catch (err) {
+        messageBox.style.display = 'block';
+        messageBox.textContent = '서버 오류가 발생했습니다.';
+        messageBox.className = 'message-box error';
+      }
+    });
+  </script>
 </body>
 </html>

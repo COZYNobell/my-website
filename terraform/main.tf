@@ -62,7 +62,7 @@ module "eks" {
       max_size     = 3
       desired_size = 2
       instance_types = ["t3.medium"]
-      key_name       = "Seoul-ec22-key"
+      key_name       = "Seoul-ec22-key.pem"
     }
   }
 }

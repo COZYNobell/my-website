@@ -1,15 +1,11 @@
 # terraform/main.tf
 
-# -----------------------------------------------------------------------------
-# AWS 공급자 설정
-# -----------------------------------------------------------------------------
 provider "aws" {
   region = var.aws_region
 }
 
-# -----------------------------------------------------------------------------
-# 1. GitHub Actions 연동을 위한 IAM (기존 리소스 조회)
-# -----------------------------------------------------------------------------
+# --- 1. GitHub Actions 연동을 위한 IAM ---
+# (이전과 동일: data "aws_iam_openid_connect_provider" 및 data "aws_iam_role")
 data "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
 }
@@ -18,9 +14,7 @@ data "aws_iam_role" "github_actions_role" {
   name = "GitHubActionsAdminRole"
 }
 
-# -----------------------------------------------------------------------------
-# 2. 네트워크 (VPC) 생성
-# -----------------------------------------------------------------------------
+# --- 2. 네트워크 (VPC) ---
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.5.2"
@@ -46,9 +40,7 @@ module "vpc" {
   }
 }
 
-# -----------------------------------------------------------------------------
-# 3. EKS 클러스터 생성
-# -----------------------------------------------------------------------------
+# --- 3. EKS 클러스터 (✨ 충돌 방지 설정 추가) ---
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "20.8.4"
@@ -59,7 +51,10 @@ module "eks" {
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
-  cluster_endpoint_public_access = true
+  # ✨ KMS 키와 CloudWatch 로그 그룹을 Terraform이 새로 만들지 않도록 설정합니다.
+  #    EKS는 기본값을 사용하거나, 이미 존재하는 리소스를 재사용하게 됩니다.
+  create_cloudwatch_log_group = false
+  cluster_encryption_config   = {}
 
   eks_managed_node_groups = {
     default = {
@@ -72,9 +67,7 @@ module "eks" {
   }
 }
 
-# -----------------------------------------------------------------------------
-# 4. 출력 값 (Outputs)
-# -----------------------------------------------------------------------------
+# --- 4. 출력 값 ---
 output "github_actions_role_arn" {
   description = "The ARN of the IAM role for GitHub Actions"
   value       = data.aws_iam_role.github_actions_role.arn

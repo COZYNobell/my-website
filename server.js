@@ -37,7 +37,6 @@ console.log("OPENWEATHERMAP_API_KEY_SECRET (존재 여부만):", process.env.OPE
 console.log("MAPS_API_KEY_SECRET (존재 여부만):", process.env.MAPS_API_KEY_SECRET ? "설정됨" : "설정 안됨");
 console.log("SNS_TOPIC_ARN (존재 여부만):", process.env.SNS_TOPIC_ARN ? "설정됨" : "설정 안됨");
 console.log("NODE_ENV:", process.env.NODE_ENV);
-
 // MySQL Connection Pool 설정
 const dbPool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -85,8 +84,8 @@ async function initializeDatabase() {
     if (connection) connection.release();
   }
 }
-initializeDatabase();
 
+initializeDatabase();
 // --- 미들웨어 설정 ---
 app.use(express.static(path.join(__dirname, 'public'))); 
 app.use(express.urlencoded({ extended: true })); 
@@ -110,20 +109,19 @@ app.use(session({
   cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 } 
 }));
 
-// --- 라우트 및 서버 실행 ---
-
 function ensureAuthenticated(req, res, next) {
     if (IS_DEVELOPMENT) console.log(`[DEBUG] Path: ${req.path}, Authenticated: ${req.session.isAuthenticated}`);
     if (req.session.isAuthenticated && req.session.user) return next(); 
     if (req.path.startsWith('/api/')) return res.status(401).json({ message: '로그인이 필요합니다.', redirectTo: '/login.html' });
     res.redirect(`/login.html?message=${encodeURIComponent('로그인이 필요합니다.')}`); 
 }
-
+// --- HTML 페이지 라우트 ---
 app.get('/signup', (req, res) => res.sendFile(path.join(__dirname, 'public', 'signup.html')));
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
 app.get('/dashboard.html', ensureAuthenticated, (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
 app.get('/subscribe', ensureAuthenticated, (req, res) => res.sendFile(path.join(__dirname, 'public', 'subscribe.html')));
 
+// --- 인증 API 라우트 (오류 시 리디렉션 방식) ---
 app.post('/signup', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.redirect(`/signup.html?error=${encodeURIComponent('이메일과 비밀번호를 모두 입력해주세요.')}`);
@@ -187,6 +185,7 @@ app.get('/logout', (req, res) => {
     } else { res.redirect('/'); }
 });
 
+// --- 기능 API 라우트 ---
 app.get('/api/current-user', ensureAuthenticated, (req, res) => res.json({ loggedIn: true, user: req.session.user }));
 
 app.post('/api/favorites', ensureAuthenticated, async (req, res) => {
@@ -201,7 +200,6 @@ app.post('/api/favorites', ensureAuthenticated, async (req, res) => {
         }
         const sql = `INSERT INTO favorites (user_id, location_name, latitude, longitude) VALUES (?, ?, ?, ?)`;
         const params = [userId, location_name, latitude, longitude];
-        if (IS_DEVELOPMENT) console.log('✨ [DEBUG] Executing SQL for POST /api/favorites:', sql, params);
         const [result] = await connection.query(sql, params);
         res.status(201).json({ 
             message: '즐겨찾기에 추가되었습니다.', 
@@ -224,9 +222,7 @@ app.get('/api/favorites', ensureAuthenticated, async (req, res) => {
         await connection.query(`USE \`${process.env.DB_NAME}\``);
         const userId = req.session.user.id;
         const sql = `SELECT id, location_name, latitude, longitude, created_at FROM favorites WHERE user_id = ? ORDER BY created_at DESC`;
-        const params = [userId];
-        if (IS_DEVELOPMENT) console.log('✨ [DEBUG] Executing SQL for GET /api/favorites:', sql, params);
-        const [rows] = await connection.query(sql, params);
+        const [rows] = await connection.query(sql, [userId]);
         res.json(rows);
     } catch (error) { 
         console.error("즐겨찾기 조회 중 DB 오류:", error.message, error.stack); 
@@ -243,7 +239,6 @@ app.delete('/api/favorites/:id', ensureAuthenticated, async (req, res) => {
         const userId = req.session.user.id; 
         const sql = `DELETE FROM favorites WHERE id = ? AND user_id = ?`;
         const params = [favoriteId, userId];
-        if (IS_DEVELOPMENT) console.log('✨ [DEBUG] Executing SQL for DELETE /api/favorites/:id:', sql, params);
         const [result] = await connection.query(sql, params);
         if (result.affectedRows === 0) {
             return res.status(404).json({ message: '해당 즐겨찾기를 찾을 수 없거나 삭제할 권한이 없습니다.' });
@@ -276,7 +271,6 @@ app.post('/api/weather-subscriptions', ensureAuthenticated, async (req, res) => 
         const favoriteLocationName = favs[0].location_name;
         const sql = `INSERT INTO weather_subscriptions (user_id, favorite_id, condition_type, condition_value) VALUES (?, ?, ?, ?)`;
         const params = [userId, favorite_id, condition_type, condition_value || null];
-        if (IS_DEVELOPMENT) console.log('✨ [DEBUG] Executing SQL for POST /api/weather-subscriptions:', sql, params);
         const [result] = await connection.query(sql, params);
         res.status(201).json({
             message: `'${favoriteLocationName}' 위치에 대한 날씨 구독 정보가 성공적으로 저장되었습니다.`,
@@ -303,9 +297,7 @@ app.get('/api/weather-subscriptions', ensureAuthenticated, async (req, res) => {
             FROM weather_subscriptions ws JOIN favorites f ON ws.favorite_id = f.id
             WHERE ws.user_id = ? ORDER BY ws.created_at DESC
         `;
-        const params = [userId];
-        if (IS_DEVELOPMENT) console.log('✨ [DEBUG] Executing SQL for GET /api/weather-subscriptions:', sql, params);
-        const [subscriptions] = await connection.query(sql, params);
+        const [subscriptions] = await connection.query(sql, [userId]);
         res.json(subscriptions);
     } catch (error) {
         console.error("날씨 구독 목록 조회 중 DB 오류:", error.message, error.stack);
@@ -321,9 +313,7 @@ app.delete('/api/weather-subscriptions/:id', ensureAuthenticated, async (req, re
         const subscriptionId = req.params.id;
         const userId = req.session.user.id;
         const sql = `DELETE FROM weather_subscriptions WHERE id = ? AND user_id = ?`;
-        const params = [subscriptionId, userId];
-        if (IS_DEVELOPMENT) console.log('✨ [DEBUG] Executing SQL for DELETE /api/weather-subscriptions/:id:', sql, params);
-        const [result] = await connection.query(sql, params);
+        const [result] = await connection.query(sql, [subscriptionId, userId]);
         if (result.affectedRows === 0) {
             return res.status(404).json({ message: '해당 날씨 구독 정보를 찾을 수 없거나 삭제할 권한이 없습니다.' });
         }
@@ -339,19 +329,16 @@ app.get('/api/weather-by-coords', async (req, res) => {
     const { lat, lon } = req.query;
     console.log(`[DEBUG] /api/weather-by-coords 요청 수신: lat=${lat}, lon=${lon}`);
     if (!lat || !lon) return res.status(400).json({ message: '위도(lat)와 경도(lon) 파라미터가 필요합니다.' });
-    
     const apiKey = process.env.OPENWEATHERMAP_API_KEY_SECRET || process.env.OPENWEATHERMAP_API_KEY;
     if (!apiKey) {
         console.error('🔴 OpenWeatherMap API 키가 설정되지 않았습니다.');
         return res.status(500).json({ message: '서버에 날씨 API 키가 설정되지 않았습니다.' });
     }
-
     const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&lang=kr`;
     try {
         console.log(`[DEBUG] OpenWeatherMap API 호출 (현재 날씨): ${weatherUrl}`);
         const response = await axios.get(weatherUrl);
         console.log(`🟢 OpenWeatherMap API 응답 (현재 날씨) 성공. 상태 코드: ${response.status}`);
-        
         const weatherData = response.data;
         res.json({ 
             description: weatherData.weather[0].description, 
@@ -371,32 +358,25 @@ app.get('/api/weather-by-coords', async (req, res) => {
 app.get('/api/weather-forecast', async (req, res) => {
     const { lat, lon } = req.query;
     console.log(`[DEBUG] /api/weather-forecast 요청 수신: lat=${lat}, lon=${lon}`);
-    if (!lat || !lon) return res.status(400).json({ message: '위도(lat)와 경도(lon) 파라미터가 필요합니다.' });
-
     const apiKey = process.env.OPENWEATHERMAP_API_KEY_SECRET || process.env.OPENWEATHERMAP_API_KEY;
     if (!apiKey) {
         console.error('🔴 OpenWeatherMap API 키가 설정되지 않았습니다.');
         return res.status(500).json({ message: '서버에 날씨 API 키가 설정되지 않았습니다.' });
     }
-    
     const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&lang=kr`;
     try {
         console.log(`[DEBUG] OpenWeatherMap API 호출 (주간 예보): ${forecastUrl}`);
         const response = await axios.get(forecastUrl);
         const forecastData = response.data;
         console.log(`🟢 OpenWeatherMap API 응답 (주간 예보) 성공. 상태 코드: ${response.status}.`);
-        
         const dailyForecasts = {};
         forecastData.list.forEach(item => { 
             const date = item.dt_txt.split(' ')[0]; 
-            if (!dailyForecasts[date]) { 
-                dailyForecasts[date] = { temps: [], weather_descriptions: [], icons: [] }; 
-            } 
+            if (!dailyForecasts[date]) dailyForecasts[date] = { temps: [], weather_descriptions: [], icons: [] };
             dailyForecasts[date].temps.push(item.main.temp); 
             dailyForecasts[date].weather_descriptions.push(item.weather[0].description); 
             dailyForecasts[date].icons.push(item.weather[0].icon); 
         });
-        
         const processedForecast = []; 
         Object.keys(dailyForecasts).slice(1, 4).forEach(date => {
             const dayData = dailyForecasts[date];
@@ -408,7 +388,6 @@ app.get('/api/weather-forecast', async (req, res) => {
                 icon: dayData.icons[Math.floor(dayData.icons.length / 2)].replace('n', 'd')
             });
         });
-        
         console.log(`[DEBUG] 예보 데이터 처리 완료. 응답 전송.`);
         res.json({ cityName: forecastData.city.name, forecast: processedForecast });
     } catch (error) { 
@@ -419,14 +398,11 @@ app.get('/api/weather-forecast', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-    const loggedInUserEmail = req.session.user ? req.session.user.email : '방문자';
-    let authLinks = '<a href="/signup">회원가입</a> | <a href="/login">로그인</a>';
-    let contextualLinks = `<p><a href="/dashboard.html">✨ 대시보드 보기 ✨</a> (로그인 필요)</p><p><a href="/subscribe">🌦️ 날씨 구독 설정하기</a> (로그인 필요)</p>`;
-    if (req.session.user && req.session.isAuthenticated) {
-        authLinks = `<a href="/logout">로그아웃</a> | <span>${req.session.user.email}님 환영합니다!</span>`;
-        contextualLinks = `<p><a href="/dashboard.html">✨ 나의 대시보드 바로가기 ✨</a></p><p><a href="/subscribe">🌦️ 나의 날씨 구독 관리</a></p>`; 
+    if (req.session.isAuthenticated && req.session.user) {
+        res.redirect('/dashboard.html');
+    } else {
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
     }
-    res.send(`<h1>날씨 앱! 🌦️</h1><p>안녕하세요, ${loggedInUserEmail}님!</p>${contextualLinks}<hr><p>${authLinks}</p>`);
 });
 
 // --- 헬스 체크 및 메트릭 라우트 ---
@@ -456,4 +432,3 @@ app.get('/metrics', async (req, res) => {
 app.listen(port, () => {
   console.log(`와! ${port}번 포트에서 웹사이트가 열렸어요!`);
 });
-

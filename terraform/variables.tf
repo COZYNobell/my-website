@@ -1,38 +1,27 @@
-# terraform/variables.tf
+# ~/terraform/variables.tf
 
-variable "aws_region" {
-  description = "The AWS region to deploy resources in."
+variable "db_name_seoul" {
   type        = string
-  default     = "ap-northeast-2"
+  description = "The DBname for the Seoul RDS database"
 }
 
-variable "cluster_name" {
-  description = "The name of the EKS cluster."
+variable "db_name_tokyo" {
   type        = string
-  default     = "my-weather-app-cluster"
+  description = "The DBname for the Tokyo RDS database"
 }
 
-variable "github_repository" {
-  description = "The GitHub repository (owner/repo) for IAM role trust."
+variable "db_user" {
   type        = string
-  default     = "COZYNobell/my-website"
+  description = "The username for the RDS database"
 }
 
-variable "db_name" {
-  description = "The name of the RDS database."
-  type        = string
-  default     = "master_db"
-}
-
-variable "db_username" {
-  description = "The master username for the RDS database."
-  type        = string
-  default     = "admin"
-}
-
-# ✨ 워크플로우로부터 DB 비밀번호를 받기 위한 변수 선언 ✨
 variable "db_password" {
-  description = "The master password for the RDS database."
   type        = string
-  sensitive   = true # 이 값은 Terraform 로그에 표시되지 않습니다.
+  description = "The password for the RDS database"
+  sensitive   = true
+}
+
+variable "route53_zone_id" {
+  type        = string
+  description = "The hosted zone ID for Route53"
 }

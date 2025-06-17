@@ -1,49 +1,26 @@
 # terraform/main.tf
 
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
+# -----------------------------------------------------------------------------
+# AWS 공급자 설정
+# -----------------------------------------------------------------------------
 provider "aws" {
   region = var.aws_region
 }
 
-# --- 1. 변수 정의 (Variables) ---
-variable "aws_region" {
-  description = "The AWS region to deploy resources in."
-  type        = string
-  default     = "ap-northeast-2"
-}
-
-variable "cluster_name" {
-  description = "The name of the EKS cluster."
-  type        = string
-  default     = "my-weather-app-cluster"
-}
-
-variable "github_repository" {
-  description = "The GitHub repository (owner/repo) for IAM role trust."
-  type        = string
-  default     = "COZYNobell/my-website"
-}
-
-# --- 2. GitHub Actions 연동을 위한 IAM ---
-# 이미 존재하는 GitHub OIDC 공급자 정보 조회
+# -----------------------------------------------------------------------------
+# 1. GitHub Actions 연동을 위한 IAM (기존 리소스 조회)
+# -----------------------------------------------------------------------------
 data "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
 }
 
-# 수동으로 생성한 IAM 역할 정보 조회
 data "aws_iam_role" "github_actions_role" {
   name = "GitHubActionsAdminRole"
 }
 
-# --- 3. 네트워크 (VPC) 생성 ---
+# -----------------------------------------------------------------------------
+# 2. 네트워크 (VPC) 생성
+# -----------------------------------------------------------------------------
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.5.2"
@@ -69,7 +46,9 @@ module "vpc" {
   }
 }
 
-# --- 4. EKS 클러스터 생성 ---
+# -----------------------------------------------------------------------------
+# 3. EKS 클러스터 생성
+# -----------------------------------------------------------------------------
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "20.8.4"
@@ -93,7 +72,9 @@ module "eks" {
   }
 }
 
-# --- 5. 출력 값 (Outputs) ---
+# -----------------------------------------------------------------------------
+# 4. 출력 값 (Outputs)
+# -----------------------------------------------------------------------------
 output "github_actions_role_arn" {
   description = "The ARN of the IAM role for GitHub Actions"
   value       = data.aws_iam_role.github_actions_role.arn

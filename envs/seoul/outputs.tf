@@ -1,16 +1,22 @@
-# ~/terraform/envs/seoul/outputs.tf
+# ~/terraform/envs/seoul/variables.tf
 
-output "rds_endpoint" {
-  description = "Primary RDS endpoint in Seoul"
-  value       = module.rds.endpoint
+variable "db_name" {
+  type        = string
+  description = "The name of the RDS database (passed from root: db_name_seoul)"
 }
 
-output "rds_arn" {
-  description = "ARN of the primary RDS instance in Seoul, used for Tokyo replica"
-  value       = module.rds.arn
+variable "db_user" {
+  type        = string
+  description = "The username for the RDS database (passed from root)"
 }
 
-output "alb_dns_name" {
-  description = "DNS name of the ALB in Seoul"
-  value       = module.alb.alb_dns_name
+variable "db_password" {
+  type        = string
+  sensitive   = true
+  description = "The password for the RDS database (passed from root)"
+}
+
+variable "route53_zone_id" {
+  type        = string
+  description = "The hosted zone ID for Route53 (passed from root)"
 }

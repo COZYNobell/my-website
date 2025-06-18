@@ -9,11 +9,11 @@ scrape_configs:
   - job_name: 'node_exporter'
     static_configs:
       - targets: 
-          - '10.0.2.173:9100'  # 👈 새로운 앱 EC2 (server-ec2)의 Private IP
-          - '10.0.2.222:9100' # 👈 새로운 모니터링 EC2 (monitering-ec2)의 Private IP
+          - '10.0.2.90:9100'  # 👈 새로운 앱 EC2 (server-ec2)의 Private IP
+          - '10.0.2.163:9100' # 👈 새로운 모니터링 EC2 (monitering-ec2)의 Private IP
 
   - job_name: 'weather_app'
     metrics_path: /metrics
     static_configs:
       - targets: 
-          - '10.0.2.173:80'     # 👈 새로운 앱 EC2 (server-ec2)의 Private IP와 포트
+          - '10.0.2.163:80'     # 👈 새로운 앱 EC2 (server-ec2)의 Private IP와 포트

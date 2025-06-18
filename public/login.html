@@ -22,7 +22,7 @@
     <div class="container">
         <h1>로그인</h1>
         <div id="message-box" class="message-box" style="display: none;"></div>
-        <form action="/login" method="POST">
+        <form id="loginForm"> 
             <div>
                 <label for="email">이메일:</label>
                 <input type="email" id="email" name="email" required>
@@ -39,6 +39,8 @@
         </div>
     </div>
     <script>
+        const API_GATEWAY_BASE_URL = "https://7bsjoaagma.execute-api.ap-northeast-2.amazonaws.com/test2/api"; // ⭐⭐ API Gateway 기본 URL 추가 ⭐⭐
+
         window.onload = function() {
             const urlParams = new URLSearchParams(window.location.search);
             const error = urlParams.get('error');
@@ -60,7 +62,51 @@
                 }
             }
         }
+
+        // ⭐⭐ 추가된 부분: 로그인 폼 제출 이벤트 리스너 ⭐⭐
+        const loginForm = document.getElementById('loginForm');
+        loginForm.addEventListener('submit', async function(e) {
+            e.preventDefault(); // 기본 폼 제출 방지
+
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            const messageBox = document.getElementById('message-box'); // 다시 가져오기
+            messageBox.style.display = 'none';
+            messageBox.textContent = '';
+
+            try {
+                const response = await fetch(`${API_GATEWAY_BASE_URL}`, { // API Gateway 엔드포인트로 POST 요청
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        action: "login", // 람다 함수가 login 액션을 수행하도록 명시
+                        email: email,
+                        password: password 
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    // 로그인 성공 시 대시보드로 리디렉션하거나, 세션 정보 저장 (JWT 등)
+                    // 현재는 간단히 메시지 표시 후 대시보드로 이동
+                    alert(result.message || '로그인 성공!');
+                    // ⭐ 중요: 실제 구현에서는 여기서 JWT 등을 localStorage에 저장하고 대시보드로 이동
+                    // 예: localStorage.setItem('token', result.token);
+                    // 예: localStorage.setItem('userEmail', email);
+                    window.location.href = '/'; // 홈 또는 대시보드 페이지로 이동
+                } else {
+                    messageBox.textContent = result.error || result.message || '로그인 실패: 알 수 없는 오류';
+                    messageBox.className = 'message-box error';
+                }
+            } catch (err) {
+                console.error('Fetch Error:', err);
+                messageBox.textContent = '네트워크 오류 또는 서버에 연결할 수 없습니다.';
+                messageBox.className = 'message-box error';
+            }
+            messageBox.style.display = 'block';
+        });
     </script>
 </body>
 </html>
-

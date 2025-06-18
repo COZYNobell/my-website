@@ -16,4 +16,4 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: 
-          - '10.0.2.163:80'     # 👈 새로운 앱 EC2 (server-ec2)의 Private IP와 포트
+          - '10.0.2.90:80'     # 👈 새로운 앱 EC2 (server-ec2)의 Private IP와 포트

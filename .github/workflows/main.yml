@@ -50,17 +50,36 @@ jobs:
           key: ${{ secrets.EC2_DEPLOY_KEY }}
           script: |
             echo "Deploying application container to Seoul EC2..."
+            set -e # 오류 발생 시 즉시 스크립트 중단
+
+            # ✨ 1. EC2에 Docker 설치 및 서비스 시작 ✨
+            #    (Amazon Linux 2023 기준)
+            echo "Installing Docker..."
+            sudo dnf install docker -y
+            sudo systemctl start docker
+            sudo systemctl enable docker
+            # ec2-user가 sudo 없이 docker 명령어를 사용할 수 있도록 권한 부여
+            sudo usermod -aG docker ${{ secrets.EC2_USERNAME }}
+            echo "Docker installed and started."
+
             CONTAINER_NAME="seoul-app-prod"
             IMAGE_URI="${{ needs.build.outputs.image_uri }}"
 
+            # 2. ECR 로그인
+            echo "Logging in to ECR..."
             aws ecr get-login-password --region ap-northeast-2 | sudo docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
             
+            # 3. 최신 이미지 가져오기
+            echo "Pulling latest image..."
             sudo docker pull $IMAGE_URI
             
+            # 4. 기존 컨테이너 중지 및 삭제
+            echo "Stopping and removing old container..."
             if [ "$(sudo docker ps -q -f name=$CONTAINER_NAME)" ]; then sudo docker stop $CONTAINER_NAME; fi
             if [ "$(sudo docker ps -aq -f name=$CONTAINER_NAME)" ]; then sudo docker rm $CONTAINER_NAME; fi
             
-            # ✨ SNS_TOPIC_ARN 환경 변수가 추가되었습니다. ✨
+            # 5. 새 컨테이너 실행
+            echo "Running new container..."
             sudo docker run -d -p 80:3000 --name $CONTAINER_NAME --restart always \
               -e NODE_ENV="production" \
               -e DB_HOST="${{ secrets.DB_HOST_SEOUL }}" \
@@ -74,4 +93,4 @@ jobs:
               $IMAGE_URI
             
             echo "✅ Seoul EC2 deployment complete!"
-            sudo docker logs --tail 50 $CONTAINER_NAME
+            sudo docker logs --tail 20 $CONTAINER_NAME

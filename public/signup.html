@@ -89,7 +89,7 @@
             messageBox.textContent = '';
 
             try {
-                // ⭐⭐ 수정된 부분: API Gateway 엔드포인트로 직접 요청 경로 추가 및 action 파라미터 추가 ⭐⭐
+                // ⭐⭐ API Gateway로 회원가입 요청, action은 "register"로 설정 ⭐⭐
                 const response = await fetch('https://7bsjoaagma.execute-api.ap-northeast-2.amazonaws.com/test2/api', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -103,9 +103,18 @@
                 const result = await response.json();
 
                 if (response.ok) {
+                    // 서버에서 반환된 토큰을 로컬 스토리지에 저장
+                    localStorage.setItem('token', result.token);  // 받은 JWT 토큰을 localStorage에 저장
+                    localStorage.setItem('userEmail', email);  // 이메일도 로컬 스토리지에 저장
+
                     messageBox.textContent = result.message || `${email} 으로 가입되었습니다. 이메일 인증을 완료해주세요.`;
                     messageBox.className = 'message-box success';
                     form.reset(); // 성공 시 폼 내용 초기화
+
+                    // 성공 후 로그인 페이지로 이동
+                    setTimeout(() => {
+                        window.location.href = '/login.html';  // 이메일 인증 후 로그인 페이지로 리디렉션
+                    }, 2000); // 2초 후 리디렉션 (사용자에게 가입 성공 메시지를 보여주기 위함)
                 } else {
                     messageBox.textContent = result.error || '가입 처리 중 오류가 발생했습니다.';
                     messageBox.className = 'message-box error';

@@ -1,6 +1,5 @@
 // public/js/dashboard.js
 
-// API Gateway의 기본 호출 URL을 설정합니다.
 const API_GATEWAY_BASE_URL = "https://7bsjoaagma.execute-api.ap-northeast-2.amazonaws.com/test2/api"; 
 
 // --- DOM 요소 가져오기 ---
@@ -29,51 +28,35 @@ let currentUser = null;
 let currentMapSelection = null; 
 
 /**
- * ✨ API 요청을 보내는 범용 헬퍼 함수 (JWT 인증 헤더 자동 추가) ✨
- * @param {string} apiUrl - 요청할 API의 전체 URL
- * @param {object} options - fetch 함수의 옵션 객체
- * @returns {Promise<any>} - API 응답의 JSON 데이터
+ * API 요청을 보내는 범용 헬퍼 함수 (JWT 인증 헤더 자동 추가)
  */
 async function fetchWithAuth(apiUrl, options = {}) {
-    // localStorage에서 저장된 JWT 토큰을 가져옵니다.
     const token = localStorage.getItem('token');
-
-    const headers = {
-        'Content-Type': 'application/json',
-        ...options.headers,
-    };
-
-    // 토큰이 존재하면 Authorization 헤더에 추가합니다.
+    const headers = { 'Content-Type': 'application/json', ...options.headers };
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
     }
-
     try {
         const response = await fetch(apiUrl, { ...options, headers });
-
-        // 인증 실패(401) 또는 권한 없음(403) 시 로그아웃 처리
         if (response.status === 401 || response.status === 403) {
             alert('인증 정보가 유효하지 않습니다. 다시 로그인해주세요.');
             logout(); 
             throw new Error('Unauthorized');
         }
-
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ message: '서버 응답 오류' }));
-            throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+            const errorData = await response.json().catch(() => ({ message: `서버 응답 오류: ${response.status}` }));
+            throw new Error(errorData.error || errorData.message);
         }
-        
         const text = await response.text();
         return text ? JSON.parse(text) : {};
-
     } catch (error) {
-        console.error(`API 호출 실패 (${apiUrl}):`, error);
+        console.error(`API 호출 실패 (${apiUrl}):`, error.message);
         throw error;
     }
 }
 
 /**
- * ✨ 로그아웃 함수 ✨
+ * 로그아웃 함수
  */
 function logout() {
     localStorage.removeItem('token');
@@ -99,11 +82,6 @@ function updateUIForLoggedOutState() {
     if (userInfoSpanElement) userInfoSpanElement.classList.add('hidden');
     if (userEmailSpan) userEmailSpan.textContent = '';
     if (favoritesSectionDiv) favoritesSectionDiv.classList.add('hidden');
-    if (favoritesListUl) favoritesListUl.innerHTML = ''; 
-    if (noFavoritesP) {
-        noFavoritesP.innerHTML = '로그인하시면 즐겨찾기 목록을 볼 수 있습니다. <a href="/login.html">로그인</a>';
-        noFavoritesP.classList.remove('hidden');
-    }
     if (loginLink) loginLink.classList.remove('hidden');
     if (signupLink) signupLink.classList.remove('hidden');
     if (logoutLink) logoutLink.classList.add('hidden');
@@ -113,17 +91,16 @@ function updateUIForLoggedOutState() {
     if (currentAddressTextSpan) currentAddressTextSpan.textContent = '지도를 클릭하여 위치를 선택해주세요.';
 }
 
-// --- 핵심 기능 함수들 (모든 API 호출에 fetchWithAuth 사용) ---
+// --- 핵심 기능 함수들 ---
 async function loadCurrentUserInfo() {
     try {
         const data = await fetchWithAuth(`${API_GATEWAY_BASE_URL}/current-user`); 
         if (data && data.user) {
             updateUIForLoggedInState(data.user);
             return data.user; 
-        } else {
-            updateUIForLoggedOutState(); 
-            return null;
         }
+        updateUIForLoggedOutState(); 
+        return null;
     } catch (error) {
         console.error('현재 사용자 정보 로드 최종 실패:', error.message);
         updateUIForLoggedOutState();
@@ -136,14 +113,12 @@ async function loadAndDisplayFavorites() {
     loadingFavoritesP.classList.remove('hidden');
     favoritesListUl.innerHTML = '';
     noFavoritesP.classList.add('hidden');
-
     try {
         const favorites = await fetchWithAuth(`${API_GATEWAY_BASE_URL}/favorites`);
         if (favorites && favorites.length > 0) {
             favorites.forEach(fav => {
                 const li = document.createElement('li');
                 li.className = 'favorite-item';
-                
                 const nameSpan = document.createElement('span');
                 nameSpan.textContent = fav.location_name;
                 nameSpan.title = `클릭하여 지도 이동: ${fav.location_name}`;
@@ -158,7 +133,6 @@ async function loadAndDisplayFavorites() {
                         updateAddressAndWeather(location.lat, location.lng, fav.location_name);
                     }
                 };
-                
                 const deleteButton = document.createElement('button');
                 deleteButton.textContent = '삭제';
                 deleteButton.onclick = async () => {
@@ -195,11 +169,9 @@ async function fetchAndDisplayWeather(lat, lon, locationName = null) {
             fetchWithAuth(`${API_GATEWAY_BASE_URL}/weather-by-coords?lat=${lat}&lon=${lon}`),
             fetchWithAuth(`${API_GATEWAY_BASE_URL}/weather-forecast?lat=${lat}&lon=${lon}`)
         ]);
-
         if (currentWeatherData) {
             weatherTodayP.innerHTML = `<strong>${locationName || currentWeatherData.name || '알 수 없는 지역'}</strong><br>상태: ${currentWeatherData.weather[0].description || '정보 없음'} <img src="https://openweathermap.org/img/wn/${currentWeatherData.weather[0].icon || '01d'}.png" alt="날씨 아이콘" style="vertical-align: middle;"><br>온도: ${currentWeatherData.main.temp?.toFixed(1)}°C (체감: ${currentWeatherData.main.feels_like?.toFixed(1)}°C)<br>습도: ${currentWeatherData.main.humidity}%`;
         }
-        
         if (forecastData && forecastData.list) {
             const dailyForecasts = {};
             forecastData.list.forEach(item => {
@@ -212,9 +184,7 @@ async function fetchAndDisplayWeather(lat, lon, locationName = null) {
             let forecastHtml = `<strong>${locationName || forecastData.city.name || '알 수 없는 지역'} 예보</strong><br>`;
             Object.keys(dailyForecasts).slice(1, 4).forEach(date => {
                 const dayData = dailyForecasts[date];
-                const representativeDescription = dayData.weather_descriptions[Math.floor(dayData.weather_descriptions.length / 2)];
-                const representativeIcon = dayData.icons[Math.floor(dayData.icons.length / 2)].replace('n', 'd');
-                forecastHtml += `<div style="margin-top: 5px; padding-top: 5px; border-top: 1px solid #efefef;"><strong>${date}</strong>: ${representativeDescription} <img src="https://openweathermap.org/img/wn/${representativeIcon}.png" alt="날씨 아이콘" style="vertical-align: middle;"><br>최저 ${Math.min(...dayData.temps).toFixed(1)}°C / 최고 ${Math.max(...dayData.temps).toFixed(1)}°C</div>`;
+                forecastHtml += `<div style="margin-top: 5px; padding-top: 5px; border-top: 1px solid #efefef;"><strong>${date}</strong>: ${dayData.weather_descriptions[Math.floor(dayData.weather_descriptions.length / 2)]} <img src="https://openweathermap.org/img/wn/${dayData.icons[Math.floor(dayData.icons.length / 2)].replace('n', 'd')}.png" alt="날씨 아이콘" style="vertical-align: middle;"><br>최저 ${Math.min(...dayData.temps).toFixed(1)}°C / 최고 ${Math.max(...dayData.temps).toFixed(1)}°C</div>`;
             });
             weatherForecastP.innerHTML = forecastHtml;
         }
@@ -284,7 +254,6 @@ function initDashboardMap() {
 }
 window.initDashboardMap = initDashboardMap; 
 
-// --- 페이지 로드 시 실행될 메인 로직 ---
 document.addEventListener('DOMContentLoaded', async () => {
     await loadCurrentUserInfo(); 
     if (currentUser) {

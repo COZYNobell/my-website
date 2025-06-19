@@ -22,6 +22,7 @@
     <div class="container">
         <h1>로그인</h1>
         <div id="message-box" class="message-box"></div>
+        <!-- ✨ form에 id를 부여하고 action, method 속성 제거 -->
         <form id="loginForm">
             <div>
                 <label for="email">이메일:</label>
@@ -39,17 +40,28 @@
         </div>
     </div>
 
+    <!-- ✨ 메이슨 님이 작성하신 API 호출 JavaScript 로직 적용 -->
     <script>
         const API_GATEWAY_BASE_URL = "https://7bsjoaagma.execute-api.ap-northeast-2.amazonaws.com/test2/api";
         const loginForm = document.getElementById('loginForm');
         const messageBox = document.getElementById('message-box');
 
+        // 페이지 로드 시, 이전 페이지(회원가입)에서 온 메시지가 있는지 확인
         window.onload = function() {
-            // ... (페이지 로드 시 메시지 표시 로직은 이전과 동일)
+            const urlParams = new URLSearchParams(window.location.search);
+            const signupStatus = urlParams.get('signup');
+            const userEmail = urlParams.get('email');
+
+            if (signupStatus === 'success') {
+                messageBox.textContent = `회원가입 성공! ${userEmail}님, 로그인해주세요.`;
+                messageBox.className = 'message-box success';
+                messageBox.style.display = 'block';
+                document.getElementById('email').value = userEmail;
+            }
         }
 
         loginForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
+            e.preventDefault(); // 기본 폼 제출(새로고침) 방지
 
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
@@ -58,6 +70,7 @@
             messageBox.textContent = '';
 
             try {
+                // API Gateway 엔드포인트로 직접 요청
                 const response = await fetch(API_GATEWAY_BASE_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -71,13 +84,16 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    // ✨ Lambda가 반환한 실제 토큰을 localStorage에 저장합니다. ✨
+                    alert(result.message || '로그인 성공!');
+                    
+                    // Lambda가 반환한 실제 토큰을 localStorage에 저장합니다.
                     if (result.token) {
                         localStorage.setItem('token', result.token); 
                         localStorage.setItem('userEmail', email); // 사용자 식별을 위해 이메일도 저장
                         window.location.href = '/dashboard.html'; // 성공 시 대시보드로 이동
                     } else {
-                        throw new Error('로그인에 성공했지만 토큰을 받지 못했습니다.');
+                        // 로그인 성공 응답을 받았지만 토큰이 없는 경우의 예외 처리
+                        throw new Error('로그인에 성공했지만 인증 토큰을 받지 못했습니다.');
                     }
                 } else {
                     messageBox.textContent = result.error || result.message || '로그인 실패: 알 수 없는 오류';

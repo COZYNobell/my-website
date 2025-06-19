@@ -1,4 +1,14 @@
 {
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
   "__requires": [
     {
       "type": "grafana",
@@ -37,50 +47,23 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "id": 17,
       "panels": [],
       "title": "1. 서버 인프라 상태 (Server Infrastructure Health)",
       "type": "row"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "my-prometheus-ds-unique-id"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 1
-      },
+      "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
       "id": 9,
-      "options": {
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "unit": "percent"
-      },
+      "options": { "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "" }, "showThresholdLabels": false, "showThresholdMarkers": true, "unit": "percent" },
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
-          "expr": "avg by (server_role, instance) (100 - (rate(node_cpu_seconds_total{job=\"node_exporter\", mode=\"idle\"}[5m]) * 100))",
-          "legendFormat": "{{server_role}} ({{instance}})",
+          "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
+          "expr": "avg by (server_role) (100 - (rate(node_cpu_seconds_total{job=\"node_exporter\", mode=\"idle\"}[5m]) * 100))",
+          "legendFormat": "{{server_role}}",
           "refId": "A"
         }
       ],
@@ -88,38 +71,16 @@
       "type": "gauge"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "my-prometheus-ds-unique-id"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 1
-      },
+      "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
       "id": 10,
-      "options": {
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "unit": "percent"
-      },
+      "options": { "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "" }, "showThresholdLabels": false, "showThresholdMarkers": true, "unit": "percent" },
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
-          "expr": "100 * (1 - (node_memory_MemAvailable_bytes{job=\"node_exporter\"} / node_memory_MemTotal_bytes{job=\"node_exporter\"}))",
-          "legendFormat": "{{server_role}} ({{instance}})",
+          "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
+          "expr": "avg by (server_role) (100 * (1 - (node_memory_MemAvailable_bytes{job=\"node_exporter\"} / node_memory_MemTotal_bytes{job=\"node_exporter\"})))",
+          "legendFormat": "{{server_role}}",
           "refId": "A"
         }
       ],
@@ -127,44 +88,21 @@
       "type": "gauge"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "my-prometheus-ds-unique-id"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 1
-      },
+      "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
       "id": 18,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single"
-        },
-        "unit": "bytes/sec"
-      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" }, "unit": "bytes/sec" },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
+          "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
           "expr": "rate(node_network_receive_bytes_total{job=\"node_exporter\"}[5m])",
-          "legendFormat": "받기: {{server_role}} ({{instance}})",
+          "legendFormat": "{{server_role}} - 수신(RX)",
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
+          "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
           "expr": "rate(node_network_transmit_bytes_total{job=\"node_exporter\"}[5m])",
-          "legendFormat": "보내기: {{server_role}} ({{instance}})",
+          "legendFormat": "{{server_role}} - 송신(TX)",
           "refId": "B"
         }
       ],
@@ -173,334 +111,94 @@
     },
     {
       "collapsed": true,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 9
-      },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
       "id": 16,
       "panels": [],
       "title": "2. 주요 현황 (Key Metrics)",
       "type": "row"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "my-prometheus-ds-unique-id"
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 8,
-        "x": 0,
-        "y": 10
-      },
+      "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 10 },
       "id": 7,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "textMode": "auto"
-      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "" }, "textMode": "auto" },
       "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
-          "expr": "sum(increase(http_request_duration_seconds_count{job=\"weather_app\"}[$__range]))",
-          "refId": "A"
-        }
-      ],
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" }, "expr": "sum(increase(http_request_duration_seconds_count{job=\"weather_app\"}[$__range]))", "refId": "A" } ],
       "title": "총 요청 수",
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "my-prometheus-ds-unique-id"
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 8,
-        "x": 8,
-        "y": 10
-      },
+      "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 10 },
       "id": 8,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "textMode": "auto"
-      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "" }, "textMode": "auto" },
       "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
-          "expr": "sum(increase(http_request_duration_seconds_count{job=\"weather_app\", status_code=~\"5..\"}[$__range]))",
-          "refId": "A"
-        }
-      ],
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" }, "expr": "sum(increase(http_request_duration_seconds_count{job=\"weather_app\", status_code=~\"5..\"}[$__range]))", "refId": "A" } ],
       "title": "총 서버 에러 (5xx)",
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "my-prometheus-ds-unique-id"
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 8,
-        "x": 16,
-        "y": 10
-      },
+      "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 10 },
       "id": 13,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "textMode": "auto"
-      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "" }, "textMode": "auto" },
       "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
-          "expr": "sum(increase(http_request_duration_seconds_count{job=\"weather_app\", status_code=~\"4..\"}[$__range]))",
-          "refId": "A"
-        }
-      ],
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" }, "expr": "sum(increase(http_request_duration_seconds_count{job=\"weather_app\", status_code=~\"4..\"}[$__range]))", "refId": "A" } ],
       "title": "총 클라이언트 에러 (4xx)",
       "type": "stat"
     },
     {
       "collapsed": true,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 15
-      },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
       "id": 15,
       "panels": [],
       "title": "3. 애플리케이션 성능 (Application Performance)",
       "type": "row"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "my-prometheus-ds-unique-id"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 16
-      },
+      "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
       "id": 2,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
-          "expr": "sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route)",
-          "legendFormat": "{{route}}",
-          "refId": "A"
-        }
-      ],
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" }, "expr": "sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route)", "legendFormat": "{{route}}", "refId": "A" } ],
       "title": "API 경로별 요청 빈도",
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "my-prometheus-ds-unique-id"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 16
-      },
+      "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
       "id": 4,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single"
-        },
-        "unit": "s"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
-          "expr": "sum(rate(http_request_duration_seconds_sum{job=\"weather_app\"}[5m])) by (route) / sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route)",
-          "legendFormat": "{{route}}",
-          "refId": "A"
-        }
-      ],
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" }, "unit": "s" },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" }, "expr": "sum(rate(http_request_duration_seconds_sum{job=\"weather_app\"}[5m])) by (route) / sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route)", "legendFormat": "{{route}}", "refId": "A" } ],
       "title": "API 경로별 평균 응답 속도",
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "my-prometheus-ds-unique-id"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 16
-      },
+      "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
       "id": 11,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single"
-        },
-        "unit": "s"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"weather_app\"}[5m])) by (le, route))",
-          "legendFormat": "{{route}}",
-          "refId": "A"
-        }
-      ],
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" }, "unit": "s" },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" }, "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"weather_app\"}[5m])) by (le, route))", "legendFormat": "{{route}}", "refId": "A" } ],
       "title": "95%ile 응답 속도",
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "my-prometheus-ds-unique-id"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 24
-      },
+      "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
       "id": 12,
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showValue": true
-        },
-        "sortBy": [
-          {
-            "displayName": "Value",
-            "sort": "desc"
-          }
-        ]
-      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showValue": true }, "sortBy": [ { "displayName": "Value", "sort": "desc" } ] },
       "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
-          "expr": "topk(5, sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route))",
-          "instant": true,
-          "legendFormat": "{{route}}",
-          "refId": "A"
-        }
-      ],
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" }, "expr": "topk(5, sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route))", "instant": true, "legendFormat": "{{route}}", "refId": "A" } ],
       "title": "가장 인기 있는 API Top 5",
       "type": "table"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "my-prometheus-ds-unique-id"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 24
-      },
+      "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
       "id": 14,
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showValue": true
-        },
-        "sortBy": [
-          {
-            "displayName": "Value",
-            "sort": "desc"
-          }
-        ],
-        "unit": "s"
-      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "showValue": true }, "sortBy": [ { "displayName": "Value", "sort": "desc" } ], "unit": "s" },
       "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
-          "expr": "topk(5, sum(rate(http_request_duration_seconds_sum{job=\"weather_app\"}[5m])) by (route) / sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route))",
-          "instant": true,
-          "legendFormat": "{{route}}",
-          "refId": "A"
-        }
-      ],
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" }, "expr": "topk(5, sum(rate(http_request_duration_seconds_sum{job=\"weather_app\"}[5m])) by (route) / sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route))", "instant": true, "legendFormat": "{{route}}", "refId": "A" } ],
       "title": "가장 느린 API Top 5",
       "type": "table"
     }
@@ -509,17 +207,12 @@
   "schemaVersion": 37,
   "style": "dark",
   "tags": [],
-  "templating": {
-    "list": []
-  },
-  "time": {
-    "from": "now-1h",
-    "to": "now"
-  },
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
   "title": "날씨 앱 종합 현황판",
   "uid": "my-weather-app-dashboard",
-  "version": 12,
+  "version": 13,
   "weekStart": ""
 }

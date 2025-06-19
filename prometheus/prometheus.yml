@@ -5,15 +5,21 @@ scrape_configs:
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
+        labels:
+          server_role: '모니터링서버' # Prometheus 자신에게도 라벨 추가
 
   - job_name: 'node_exporter'
     static_configs:
-      - targets: 
-          - '10.0.2.90:9100'  # 👈 새로운 앱 EC2 (server-ec2)의 Private IP
-          - '10.0.2.163:9100' # 👈 새로운 모니터링 EC2 (monitering-ec2)의 Private IP
+      - targets: ['10.0.2.90:9100'] # app-ec2
+        labels:
+          server_role: '웹서버' # ✨ '웹서버' 역할 라벨 추가
+      - targets: ['10.0.2.163:9100'] # monitering-ec2
+        labels:
+          server_role: '모니터링서버' # ✨ '모니터링서버' 역할 라벨 추가
 
   - job_name: 'weather_app'
     metrics_path: /metrics
     static_configs:
-      - targets: 
-          - '10.0.2.90:80'     # 👈 새로운 앱 EC2 (server-ec2)의 Private IP와 포트
+      - targets: ['10.0.2.90:9100'] # app-ec2
+        labels:
+          server_role: '웹서버'

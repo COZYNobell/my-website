@@ -30,7 +30,7 @@ let currentMapSelection = null;
 
 /**
  * ✨ API 요청을 보내는 범용 헬퍼 함수 (JWT 인증 헤더 자동 추가) ✨
- * @param {string} url - 요청할 API의 URL
+ * @param {string} apiUrl - 요청할 API의 전체 URL
  * @param {object} options - fetch 함수의 옵션 객체
  * @returns {Promise<any>} - API 응답의 JSON 데이터
  */
@@ -51,6 +51,7 @@ async function fetchWithAuth(apiUrl, options = {}) {
     try {
         const response = await fetch(apiUrl, { ...options, headers });
 
+        // 인증 실패(401) 또는 권한 없음(403) 시 로그아웃 처리
         if (response.status === 401 || response.status === 403) {
             alert('인증 정보가 유효하지 않습니다. 다시 로그인해주세요.');
             logout(); 
@@ -98,11 +99,20 @@ function updateUIForLoggedOutState() {
     currentUser = null; 
     if (userInfoSpanElement) userInfoSpanElement.classList.add('hidden');
     if (userEmailSpan) userEmailSpan.textContent = '';
+
     if (favoritesSectionDiv) favoritesSectionDiv.classList.add('hidden');
+    if (favoritesListUl) favoritesListUl.innerHTML = ''; 
+    if (noFavoritesP) {
+        noFavoritesP.innerHTML = '로그인하시면 즐겨찾기 목록을 볼 수 있습니다. <a href="/login.html">로그인</a>';
+        noFavoritesP.classList.remove('hidden');
+    }
+    
     if (loginLink) loginLink.classList.remove('hidden');
     if (signupLink) signupLink.classList.remove('hidden');
     if (logoutLink) logoutLink.classList.add('hidden');
+
     if (addToFavoritesBtn) addToFavoritesBtn.classList.add('hidden'); 
+
     if (weatherTodayP) weatherTodayP.textContent = '날씨 정보를 보려면 지도에서 위치를 선택하거나 로그인하세요.';
     if (weatherForecastP) weatherForecastP.textContent = '예보 정보를 보려면 지도에서 위치를 선택하거나 로그인하세요.';
     if (currentAddressTextSpan) currentAddressTextSpan.textContent = '지도를 클릭하여 위치를 선택해주세요.';
@@ -111,8 +121,9 @@ function updateUIForLoggedOutState() {
 // --- 핵심 기능 함수들 (fetchData -> fetchWithAuth로 변경) ---
 async function loadCurrentUserInfo() {
     try {
+        // ✨ fetchData 대신 fetchWithAuth 사용! ✨
         const data = await fetchWithAuth(`${API_GATEWAY_BASE_URL}/current-user`); 
-        if (data && data.loggedIn) {
+        if (data && data.user) {
             updateUIForLoggedInState(data.user);
             return data.user; 
         } else {
@@ -121,13 +132,16 @@ async function loadCurrentUserInfo() {
         }
     } catch (error) {
         console.error('현재 사용자 정보 로드 최종 실패:', error.message);
-        updateUIForLoggedOutState(); 
+        updateUIForLoggedOutState();
         return null;
     }
 }
 
 async function loadAndDisplayFavorites() {
-    if (!currentUser) return;
+    if (!currentUser) { 
+        updateUIForLoggedOutState(); 
+        return;
+    }
     if (!favoritesListUl || !noFavoritesP || !loadingFavoritesP) return;
 
     loadingFavoritesP.classList.remove('hidden');
@@ -143,8 +157,22 @@ async function loadAndDisplayFavorites() {
                 
                 const nameSpan = document.createElement('span');
                 nameSpan.textContent = fav.location_name;
+                nameSpan.title = `클릭하여 지도 이동: ${fav.location_name}`;
                 nameSpan.style.cursor = 'pointer';
-                nameSpan.onclick = () => { /* ... 지도 이동 로직 ... */ };
+                nameSpan.onclick = () => {
+                    if (map) { 
+                        const location = { lat: parseFloat(fav.latitude), lng: parseFloat(fav.longitude) };
+                        map.setCenter(location);
+                        map.setZoom(15);
+                        if (currentMarker) {
+                            currentMarker.setPosition(location);
+                        } else {
+                            currentMarker = new google.maps.Marker({ position: location });
+                        }
+                        currentMarker.setMap(map);
+                        updateAddressAndWeather(location.lat, location.lng, fav.location_name);
+                    }
+                };
                 
                 const deleteButton = document.createElement('button');
                 deleteButton.textContent = '삭제';
@@ -152,6 +180,7 @@ async function loadAndDisplayFavorites() {
                     if (confirm(`'${fav.location_name}' 즐겨찾기를 삭제하시겠습니까?`)) {
                         try {
                             await fetchWithAuth(`${API_GATEWAY_BASE_URL}/favorites/${fav.id}`, { method: 'DELETE' });
+                            alert('즐겨찾기에서 삭제되었습니다.');
                             loadAndDisplayFavorites(); 
                         } catch (deleteError) {
                             alert(`삭제 실패: ${deleteError.message}`);
@@ -163,6 +192,7 @@ async function loadAndDisplayFavorites() {
                 favoritesListUl.appendChild(li);
             });
         } else {
+            noFavoritesP.textContent = '등록된 즐겨찾기가 없습니다.';
             noFavoritesP.classList.remove('hidden');
         }
     } catch (error) {
@@ -175,63 +205,142 @@ async function loadAndDisplayFavorites() {
 
 async function fetchAndDisplayWeather(lat, lon, locationName = null) {
     if (!weatherTodayP || !weatherForecastP) return;
-    weatherTodayP.innerHTML = '오늘 날씨 정보 가져오는 중...';
-    weatherForecastP.innerHTML = '주간 예보 정보 가져오는 중...';
+    weatherTodayP.innerHTML = '오늘 날씨 정보를 가져오는 중...';
+    weatherForecastP.innerHTML = '주간 예보 정보를 가져오는 중...';
 
     try {
         const [currentWeatherData, forecastData] = await Promise.all([
             fetchWithAuth(`${API_GATEWAY_BASE_URL}/weather-by-coords?lat=${lat}&lon=${lon}`),
             fetchWithAuth(`${API_GATEWAY_BASE_URL}/weather-forecast?lat=${lat}&lon=${lon}`)
         ]);
-        // ... (이하 날씨 정보 표시 로직은 동일)
+
+        if (currentWeatherData) {
+            weatherTodayP.innerHTML = `
+                <strong>${locationName || currentWeatherData.cityName || '알 수 없는 지역'}</strong><br>
+                상태: ${currentWeatherData.description || '정보 없음'} <img src="https://openweathermap.org/img/wn/${currentWeatherData.icon || '01d'}.png" alt="날씨 아이콘" style="vertical-align: middle;"><br>
+                온도: ${currentWeatherData.temperature !== undefined ? currentWeatherData.temperature + '°C' : '정보 없음'} (체감: ${currentWeatherData.feels_like !== undefined ? currentWeatherData.feels_like + '°C' : '정보 없음'})<br>
+                습도: ${currentWeatherData.humidity !== undefined ? currentWeatherData.humidity + '%' : '정보 없음'}
+            `;
+        } else {
+            weatherTodayP.textContent = '현재 날씨 정보를 가져올 수 없습니다.';
+        }
+
+        if (forecastData && forecastData.forecast) {
+            let forecastHtml = `<strong>${locationName || forecastData.cityName || '알 수 없는 지역'} 예보</strong><br>`;
+            if (forecastData.forecast.length > 0) {
+                forecastData.forecast.forEach(day => {
+                    forecastHtml += `
+                        <div style="margin-top: 5px; padding-top: 5px; border-top: 1px solid #efefef;">
+                            <strong>${day.date}</strong>: ${day.description || '정보 없음'} <img src="https://openweathermap.org/img/wn/${day.icon || '01d'}.png" alt="날씨 아이콘" style="vertical-align: middle;"><br>
+                            최저 ${day.temp_min}°C / 최고 ${day.temp_max}°C
+                        </div>`;
+                });
+            } else {
+                forecastHtml += '예보 정보가 없습니다.';
+            }
+            weatherForecastP.innerHTML = forecastHtml;
+        } else {
+            weatherForecastP.textContent = '주간 예보 정보를 가져올 수 없습니다.';
+        }
     } catch (error) {
         console.error('날씨 정보 표시 중 오류:', error.message);
-        if (weatherTodayP) weatherTodayP.textContent = '날씨 정보를 불러오는 데 실패했습니다.';
-        if (weatherForecastP) weatherForecastP.textContent = '예보 정보를 불러오는 데 실패했습니다.';
+        weatherTodayP.textContent = '날씨 정보를 불러오는 데 실패했습니다.';
+        weatherForecastP.textContent = '예보 정보를 불러오는 데 실패했습니다.';
     }
 }
 
 async function updateAddressAndWeather(lat, lng, predefinedAddress = null) {
-    // ... (이전 로직과 동일, 내부의 fetchAndDisplayWeather 호출은 그대로 유지)
+    if (currentAddressTextSpan) {
+        currentAddressTextSpan.textContent = predefinedAddress || '주소 변환 중...';
+    }
+    
+    if (!predefinedAddress && geocoder) {
+        geocoder.geocode({ 'location': { lat, lng } }, (results, status) => {
+            let addressToDisplay = `위도: ${lat.toFixed(4)}, 경도: ${lng.toFixed(4)}`;
+            if (status === 'OK' && results && results[0]) {
+                addressToDisplay = results[0].formatted_address;
+            } else {
+                console.warn('Geocoder 실패:', status);
+            }
+            if (currentAddressTextSpan) currentAddressTextSpan.textContent = addressToDisplay;
+            currentMapSelection = { name: addressToDisplay, lat, lng };
+            if (currentUser && addToFavoritesBtn) addToFavoritesBtn.classList.remove('hidden');
+            fetchAndDisplayWeather(lat, lng, addressToDisplay);
+        });
+    } else {
+        const addressToDisplay = predefinedAddress || `위도: ${lat.toFixed(4)}, 경도: ${lng.toFixed(4)}`;
+        if (currentAddressTextSpan) currentAddressTextSpan.textContent = addressToDisplay;
+        currentMapSelection = { name: addressToDisplay, lat, lng };
+        if (currentUser && addToFavoritesBtn) addToFavoritesBtn.classList.remove('hidden');
+        fetchAndDisplayWeather(lat, lng, addressToDisplay);
+    }
 }
 
 async function handleAddFavoriteClick() {
-    if (!currentUser || !currentMapSelection) return; 
+    if (!currentUser || !currentMapSelection || !currentMapSelection.name) {
+        alert("먼저 지도에서 유효한 위치를 선택해주세요.");
+        return;
+    }
     try {
         const newFavoriteData = {
             location_name: currentMapSelection.name,
             latitude: currentMapSelection.lat,
             longitude: currentMapSelection.lng
         };
-        await fetchWithAuth(`${API_GATEWAY_BASE_URL}/favorites`, {
+        const result = await fetchWithAuth(`${API_GATEWAY_BASE_URL}/favorites`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newFavoriteData)
         });
-        alert("즐겨찾기에 추가되었습니다!");
+        alert(result.message || "즐겨찾기에 추가되었습니다!");
         loadAndDisplayFavorites(); 
     } catch (error) {
         alert(`즐겨찾기 추가 실패: ${error.message}`);
+        console.error("즐겨찾기 추가 API 호출 실패:", error);
     }
 }
 
-// Google 지도 초기화 함수
 function initDashboardMap() {
-    // ... (이전 로직과 동일)
+    console.log("Google 지도 초기화 (initDashboardMap) 시작");
+    const initialLocation = { lat: 37.5665, lng: 126.9780 };
+    const mapElement = document.getElementById('map-container');
+    if (!mapElement) return;
+
+    try {
+        map = new google.maps.Map(mapElement, { zoom: 12, center: initialLocation });
+        geocoder = new google.maps.Geocoder();
+        currentMarker = new google.maps.Marker({ map: null }); 
+
+        map.addListener('click', (mapsMouseEvent) => {
+            const clickedLat = mapsMouseEvent.latLng.lat();
+            const clickedLng = mapsMouseEvent.latLng.lng();
+            if (currentMarker) {
+                currentMarker.setPosition(mapsMouseEvent.latLng);
+                currentMarker.setMap(map); 
+            }
+            updateAddressAndWeather(clickedLat, clickedLng);
+        });
+        
+        updateAddressAndWeather(initialLocation.lat, initialLocation.lng, "서울특별시 (기본 위치)");
+
+    } catch (e) {
+        console.error("Google 지도 초기화 중 오류:", e);
+        if (mapElement) mapElement.innerHTML = "<p>지도 초기화 중 오류가 발생했습니다.</p>";
+    }
 }
 window.initDashboardMap = initDashboardMap; 
 
-// --- 페이지 로드 시 실행될 메인 로직 ---
+// 페이지 로드 시 실행될 메인 로직
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('Dashboard DOMContentLoaded.');
+    console.log('Dashboard DOMContentLoaded. 사용자 정보 로드 시도...');
     
     await loadCurrentUserInfo(); 
 
     if (currentUser) {
+        console.log('사용자 인증됨. 즐겨찾기 로드.');
         loadAndDisplayFavorites();
     }
     
-    // 로그아웃 버튼 이벤트 리스너 추가
     if (logoutLink) {
         logoutLink.addEventListener('click', (e) => {
             e.preventDefault();

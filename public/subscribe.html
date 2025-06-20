@@ -97,19 +97,21 @@
         const userInfoP = document.getElementById('userInfo');
 
         async function fetchData(apiUrl, options = {}) {
-            // ⭐⭐⭐ 요청하신 수정 부분 시작 ⭐⭐⭐
+            // API Gateway URL이 상대 경로로 시작하면 API_GATEWAY_BASE_URL을 붙여줍니다.
+            const fullApiUrl = apiUrl.startsWith('/') ? `${API_GATEWAY_BASE_URL}${apiUrl}` : apiUrl;
+
+            // options.headers가 정의되어 있지 않으면 초기화합니다.
+            if (!options.headers) {
+                options.headers = {};
+            }
+
+            // 로컬 스토리지에서 토큰을 가져와 Authorization 헤더에 추가합니다.
             const token = localStorage.getItem('token');
             if (token) {
-                options.headers = {
-                    ...options.headers,
-                    'Authorization': `Bearer ${token}`
-                };
+                options.headers['Authorization'] = `Bearer ${token}`;
             }
-            // ⭐⭐⭐ 요청하신 수정 부분 끝 ⭐⭐⭐
 
             try {
-                // API Gateway URL이 상대 경로로 시작하면 API_GATEWAY_BASE_URL을 붙여줍니다.
-                const fullApiUrl = apiUrl.startsWith('/') ? `<span class="math-inline">\{API\_GATEWAY\_BASE\_URL\}</span>{apiUrl}` : apiUrl;
                 const response = await fetch(fullApiUrl, options);
 
                 if (response.status === 401) {
@@ -126,7 +128,7 @@
                 const text = await response.text();
                 return text ? JSON.parse(text) : {};
             } catch (error) {
-                console.error(`API 호출 (${apiUrl}) 실패:`, error.message);
+                console.error(`API 호출 (${fullApiUrl}) 실패:`, error.message);
                 throw error; 
             }
         }
@@ -134,7 +136,7 @@
         async function populateFavoritesDropdown() {
             if (!favoriteSelect || !noFavoritesMessageP) return;
             try {
-                // API URL 수정: /api/favorites는 API Gateway 베이스 URL에 붙여야 함
+                // API URL 수정: /favorites로 전달하면 fetchData가 자동으로 API_GATEWAY_BASE_URL을 붙여줍니다.
                 const favorites = await fetchData('/favorites'); 
                 favoriteSelect.innerHTML = '<option value="">-- 즐겨찾기 선택 --</option>';
                 if (favorites && favorites.length > 0) {
@@ -164,7 +166,7 @@
         async function loadAndDisplayCurrentSubscriptions() {
             if (!subscriptionsListUl || !noSubscriptionsMessageP) return;
             try {
-                // API URL 수정: /api/weather-subscriptions는 API Gateway 베이스 URL에 붙여야 함
+                // API URL 수정: /weather-subscriptions로 전달하면 fetchData가 자동으로 API_GATEWAY_BASE_URL을 붙여줍니다.
                 const subscriptions = await fetchData('/weather-subscriptions');
                 subscriptionsListUl.innerHTML = ''; 
                 
@@ -176,14 +178,14 @@
                         if (sub.condition_value) {
                             conditionText += ` (${sub.condition_value})`;
                         }
-                        li.innerHTML = `<span><span class="math-inline">\{sub\.location\_name\} \- <b\></span>{conditionText}</b></span>`;
+                        li.innerHTML = `<span>${sub.location_name} - <b>${conditionText}</b></span>`;
                         
                         const deleteButton = document.createElement('button');
                         deleteButton.textContent = '취소';
                         deleteButton.onclick = async () => {
-                            if (confirm(`'<span class="math-inline">\{sub\.location\_name\}'의 '</span>{conditionText}' 구독을 취소하시겠습니까?`)) {
+                            if (confirm(`'${sub.location_name}'의 '${conditionText}' 구독을 취소하시겠습니까?`)) {
                                 try {
-                                    // API URL 수정: /api/weather-subscriptions/${sub.id}는 API Gateway 베이스 URL에 붙여야 함
+                                    // API URL 수정: /weather-subscriptions/${sub.id}로 전달하면 fetchData가 자동으로 API_GATEWAY_BASE_URL을 붙여줍니다.
                                     await fetchData(`/weather-subscriptions/${sub.id}`, { method: 'DELETE' });
                                     alert('구독이 취소되었습니다.');
                                     loadAndDisplayCurrentSubscriptions(); 
@@ -251,7 +253,7 @@
                 }
 
                 const formData = {
-                    action: "subscribe_condition",
+                    action: "subscribe_condition", // Lambda에서 subscribe_condition 액션을 처리하도록 가정
                     email: currentUser.email,
                     favorite_id: parseInt(favoriteId), 
                     condition_type: conditionType,
@@ -261,8 +263,9 @@
                 console.log('Submitting subscription data:', JSON.stringify(formData, null, 2));
 
                 try {
-                    // API URL 수정: /api/weather-subscriptions는 API Gateway 베이스 URL에 붙여야 함
-                    const result = await fetchData('/weather-subscriptions', {
+                    // API URL 수정: /api로 전달하면 fetchData가 자동으로 API_GATEWAY_BASE_URL을 붙여줍니다.
+                    // Lambda 함수는 POST 요청의 body에 action 필드를 보고 처리합니다.
+                    const result = await fetchData('/', { 
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(formData)
@@ -286,7 +289,7 @@
             if (!loadingMessageP || !subscriptionContentDiv) return;
             
             try {
-                // API URL 수정: /api/current-user는 API Gateway 베이스 URL에 붙여야 함
+                // API URL 수정: /current-user로 전달하면 fetchData가 자동으로 API_GATEWAY_BASE_URL을 붙여줍니다.
                 const userResponse = await fetchData('/current-user'); 
                 currentUser = userResponse.user;
                 

@@ -80,6 +80,9 @@
         // 전역 변수로 현재 사용자 정보 저장
         let currentUser = null;
 
+        // API Gateway 기본 URL (dashboard.js와 동일하게 설정)
+        const API_GATEWAY_BASE_URL = "https://7bsjoaagma.execute-api.ap-northeast-2.amazonaws.com/test2/api"; 
+
         const favoriteSelect = document.getElementById('favoriteSelect');
         const noFavoritesMessageP = document.getElementById('noFavoritesMessage');
         const conditionTypeSelect = document.getElementById('conditionType');
@@ -94,8 +97,21 @@
         const userInfoP = document.getElementById('userInfo');
 
         async function fetchData(apiUrl, options = {}) {
+            // ⭐⭐⭐ 요청하신 수정 부분 시작 ⭐⭐⭐
+            const token = localStorage.getItem('token');
+            if (token) {
+                options.headers = {
+                    ...options.headers,
+                    'Authorization': `Bearer ${token}`
+                };
+            }
+            // ⭐⭐⭐ 요청하신 수정 부분 끝 ⭐⭐⭐
+
             try {
-                const response = await fetch(apiUrl, options);
+                // API Gateway URL이 상대 경로로 시작하면 API_GATEWAY_BASE_URL을 붙여줍니다.
+                const fullApiUrl = apiUrl.startsWith('/') ? `<span class="math-inline">\{API\_GATEWAY\_BASE\_URL\}</span>{apiUrl}` : apiUrl;
+                const response = await fetch(fullApiUrl, options);
+
                 if (response.status === 401) {
                     const data = await response.json().catch(() => ({ message: '로그인이 필요합니다.', redirectTo: '/login.html' }));
                     window.location.href = data.redirectTo || '/login.html';
@@ -107,7 +123,6 @@
                     catch (e) { console.warn('오류 응답 JSON 파싱 실패', response.status, response.statusText); }
                     throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
                 }
-                // 응답 본문이 비어있을 경우를 대비하여 처리
                 const text = await response.text();
                 return text ? JSON.parse(text) : {};
             } catch (error) {
@@ -119,7 +134,8 @@
         async function populateFavoritesDropdown() {
             if (!favoriteSelect || !noFavoritesMessageP) return;
             try {
-                const favorites = await fetchData('/api/favorites');
+                // API URL 수정: /api/favorites는 API Gateway 베이스 URL에 붙여야 함
+                const favorites = await fetchData('/favorites'); 
                 favoriteSelect.innerHTML = '<option value="">-- 즐겨찾기 선택 --</option>';
                 if (favorites && favorites.length > 0) {
                     favorites.forEach(fav => {
@@ -148,7 +164,8 @@
         async function loadAndDisplayCurrentSubscriptions() {
             if (!subscriptionsListUl || !noSubscriptionsMessageP) return;
             try {
-                const subscriptions = await fetchData('/api/weather-subscriptions');
+                // API URL 수정: /api/weather-subscriptions는 API Gateway 베이스 URL에 붙여야 함
+                const subscriptions = await fetchData('/weather-subscriptions');
                 subscriptionsListUl.innerHTML = ''; 
                 
                 if (subscriptions && subscriptions.length > 0) {
@@ -159,14 +176,15 @@
                         if (sub.condition_value) {
                             conditionText += ` (${sub.condition_value})`;
                         }
-                        li.innerHTML = `<span>${sub.location_name} - <b>${conditionText}</b></span>`;
+                        li.innerHTML = `<span><span class="math-inline">\{sub\.location\_name\} \- <b\></span>{conditionText}</b></span>`;
                         
                         const deleteButton = document.createElement('button');
                         deleteButton.textContent = '취소';
                         deleteButton.onclick = async () => {
-                            if (confirm(`'${sub.location_name}'의 '${conditionText}' 구독을 취소하시겠습니까?`)) {
+                            if (confirm(`'<span class="math-inline">\{sub\.location\_name\}'의 '</span>{conditionText}' 구독을 취소하시겠습니까?`)) {
                                 try {
-                                    await fetchData(`/api/weather-subscriptions/${sub.id}`, { method: 'DELETE' });
+                                    // API URL 수정: /api/weather-subscriptions/${sub.id}는 API Gateway 베이스 URL에 붙여야 함
+                                    await fetchData(`/weather-subscriptions/${sub.id}`, { method: 'DELETE' });
                                     alert('구독이 취소되었습니다.');
                                     loadAndDisplayCurrentSubscriptions(); 
                                 } catch (deleteError) {
@@ -209,7 +227,7 @@
             subscribeForm.addEventListener('submit', async function(event) {
                 event.preventDefault(); 
                 messageDiv.textContent = ''; 
-                messageDiv.className = '';   
+                messageDiv.className = '';    
 
                 const favoriteId = favoriteSelect.value;
                 const conditionType = conditionTypeSelect.value;
@@ -243,7 +261,8 @@
                 console.log('Submitting subscription data:', JSON.stringify(formData, null, 2));
 
                 try {
-                    const result = await fetchData('/api/weather-subscriptions', {
+                    // API URL 수정: /api/weather-subscriptions는 API Gateway 베이스 URL에 붙여야 함
+                    const result = await fetchData('/weather-subscriptions', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(formData)
@@ -267,7 +286,8 @@
             if (!loadingMessageP || !subscriptionContentDiv) return;
             
             try {
-                const userResponse = await fetchData('/api/current-user'); 
+                // API URL 수정: /api/current-user는 API Gateway 베이스 URL에 붙여야 함
+                const userResponse = await fetchData('/current-user'); 
                 currentUser = userResponse.user;
                 
                 if(userInfoP && currentUser) {

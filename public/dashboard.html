@@ -87,7 +87,7 @@
             padding: 20px; 
             border: 1px solid #dee2e6; 
             border-radius: 8px; 
-            box-shadow: 0 2px 4px rgba{source: 1}[0,0,0,0.05);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
         .info-grid h2, #favorites-section h2 { 
             color: #007bff;
@@ -108,7 +108,7 @@
         }
         #favorites-list .favorite-item:last-child { border-bottom: none;
         }
-        #favorites-1-list .favorite-item .favorite-name { 
+        #favorites-list .favorite-item .favorite-name { 
             cursor: pointer;
             flex-grow: 1; 
             color: #495057;
@@ -137,7 +137,7 @@
         
         .hidden { display: none !important;
         } 
-        .nav-links-bottom { text-align: center; margin-top:30px; padding-top:20px; border-top: 1px solid #dee2e6;
+        .nav-links-bottom { text-align: center; margin-top:30px; padding-top:20px; border-top: 1px solid #dee2e6; width: 100%;
         }
         .nav-links-bottom a { color: #007bff; text-decoration: none; margin: 0 10px; font-weight: 500;
         }
@@ -147,7 +147,9 @@
         padding: 10px 0;}
     </style>
 
-    </head>
+    <script src="/js/dashboard.js" defer></script> 
+    
+</head>
 <body>
     <header class="header">
         <div class="brand">
@@ -173,12 +175,10 @@
         <div class="info-grid">
             <section id="weather-today">
                 <h2>오늘 날씨</h2>
-                <p>날씨 정보를 가져오는 중...</p> 
-            </section>
+                <p>날씨 정보를 가져오는 중...</p> </section>
             <section id="weather-forecast">
                 <h2>주간 예보 (향후 2일)</h2>
-                <p>예보 정보를 가져오는 중...</p> 
-            </section>
+                <p>예보 정보를 가져오는 중...</p> </section>
         </div>
 
         <section id="favorites-section" class="hidden"> 
@@ -192,11 +192,8 @@
 
     <div class="nav-links-bottom">
         <a href="/">홈으로</a> |
-        <a href="/subscribe.html">날씨 구독 설정</a> 
-    </div>
+        <a href="/subscribe.html">날씨 구독 설정</a> </div>
 
-    <script src="/js/dashboard.js"></script> 
-    
     <script async defer
         src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAsBiqFxUsjLjxFC9waxyzP2xjK-4c0YS8&callback=initDashboardMap&language=ko&region=KR&libraries=marker,geocoding">
     </script>

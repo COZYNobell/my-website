@@ -232,7 +232,7 @@ async function fetchAndDisplayWeather(lat, lon, locationName = null) {
             fetchData(`${API_GATEWAY_BASE_URL}/weather-forecast?lat=${lat}&lon=${lon}`) // 
         ]); // 
         if (currentWeatherData) { // 
-            weatherTodayP.innerHTML = ` // 
+            weatherTodayP.innerHTML = ` 
                 <strong>${locationName || currentWeatherData.cityName || '알 수 없는 지역'}</strong><br> // 
                  상태: ${currentWeatherData.description || '정보 없음'} <img src="http://openweathermap.org/img/wn/${currentWeatherData.icon || '01d'}.png" alt="날씨 아이콘" style="vertical-align: middle;"><br> // 
                 온도: ${currentWeatherData.temperature !== undefined ? currentWeatherData.temperature + '°C' : '정보 없음'} (체감: ${currentWeatherData.feels_like !== undefined ? currentWeatherData.feels_like + '°C' : '정보 없음'})<br> // 

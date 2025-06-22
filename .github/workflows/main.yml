@@ -1,4 +1,4 @@
-name: Provision and Deploy to EC2
+name: Deploy App and Monitoring to EC2
 
 on:
   push:
@@ -7,13 +7,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  # 1단계: Docker 이미지 빌드 및 푸시
+  # 1단계: Docker 이미지 빌드 및 ECR에 푸시
   build-and-push:
-<<<<<<< HEAD
     name: Build and Push Docker Image
-=======
-    name: Build Docker Image
->>>>>>> 985c348e98ec82998da7a5f31399304d4332bbbe
     runs-on: ubuntu-latest
     outputs:
       image_uri: ${{ steps.build-image.outputs.image }}
@@ -25,10 +21,12 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-northeast-2 
+          aws-region: ap-northeast-2
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+
       - name: Build and push Docker image
         id: build-image
         env:
@@ -45,12 +43,7 @@ jobs:
   provision-and-deploy:
     name: Provision EC2 and Deploy App
     runs-on: ubuntu-latest
-<<<<<<< HEAD
-    # ✨ 'build'를 올바른 작업 이름인 'build-and-push'로 수정했습니다.
-    needs: build-and-push 
-=======
-    needs: build-and-push # ✨ 'build'를 올바른 작업 이름인 'build-and-push'로 수정!
->>>>>>> 985c348e98ec82998da7a5f31399304d4332bbbe
+    needs: build-and-push # build 작업이 성공적으로 끝나야 이 작업이 시작됩니다.
 
     steps:
       - name: Checkout code
@@ -71,15 +64,13 @@ jobs:
 
       - name: Run Ansible Playbooks
         run: |
-<<<<<<< HEAD
-          # ✨ GitHub Actions 실행기에 Ansible을 설치하는 단계를 추가했습니다.
+          # GitHub Actions 실행기에 Ansible을 설치합니다.
           sudo apt-get update && sudo apt-get install -y ansible
           
-          # ✨ --ssh-common-args를 사용하여 호스트 키 검증을 비활성화합니다.
-=======
-          sudo apt-get update && sudo apt-get install -y ansible
->>>>>>> 985c348e98ec82998da7a5f31399304d4332bbbe
+          echo "Running Base Setup Playbook..."
           ansible-playbook -i ansible/inventory.ini --private-key ~/.ssh/deploy_key ansible/setup-ec2-base.yaml --ssh-common-args='-o StrictHostKeyChecking=no' --verbose
+          
+          echo "Running Monitoring Setup Playbook..."
           ansible-playbook -i ansible/inventory.ini --private-key ~/.ssh/deploy_key ansible/setup-monitoring.yaml --ssh-common-args='-o StrictHostKeyChecking=no' --verbose
 
       - name: Deploy Application Container
@@ -90,10 +81,6 @@ jobs:
           key: ${{ secrets.EC2_DEPLOY_KEY }}
           script: |
             CONTAINER_NAME="seoul-app-prod"
-<<<<<<< HEAD
-            # ✨ 의존하는 작업 이름(needs)을 'build-and-push'로 올바르게 수정했습니다.
-=======
->>>>>>> 985c348e98ec82998da7a5f31399304d4332bbbe
             IMAGE_URI="${{ needs.build-and-push.outputs.image_uri }}"
 
             aws ecr get-login-password --region ap-northeast-2 | sudo docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com

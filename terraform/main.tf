@@ -1,37 +1,59 @@
 # terraform/main.tf
 
-# 이 파일에서는 별도의 provider 블록을 선언하지 않습니다.
-# 같은 폴더 내의 다른 .tf 파일에 있는 provider 설정을 공유하여 사용합니다.
-# (만약 없다면, 이전에 드린 최종본의 provider 블록을 추가해야 합니다.)
-
-
-# --- 1. 네트워크 (VPC) ---
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "5.5.2"
-
-  name = "my-eks-vpc"
-  cidr = "10.0.0.0/16"
-
-  azs             = ["${var.aws_region}a", "${var.aws_region}b", "${var.aws_region}c"]
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
-  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
-
-  enable_nat_gateway = true
-  single_nat_gateway = true
-
-  public_subnet_tags = {
-    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
-    "kubernetes.io/role/elb"                      = "1"
-  }
-
-  private_subnet_tags = {
-    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
-    "kubernetes.io/role/internal-elb"             = "1"
+# -----------------------------------------------------------------------------
+# AWS 공급자 및 Terraform 버전 설정
+# -----------------------------------------------------------------------------
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
   }
 }
 
-# --- 2. EKS 클러스터 ---
+provider "aws" {
+  region = var.aws_region
+}
+
+# -----------------------------------------------------------------------------
+# 데이터 소스 (기존 리소스 정보 조회)
+# -----------------------------------------------------------------------------
+
+# 1. 기존 VPC 정보 조회
+data "aws_vpc" "existing" {
+  id = "vpc-01dc2534a77a00126"
+}
+
+# 2. 기존 Private Subnet 정보 조회
+data "aws_subnets" "private" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.existing.id]
+  }
+  # 제공해주신 Private Subnet ID 목록
+  ids = ["subnet-0adaea0f3d503a438", "subnet-014c112f289df7e41"]
+}
+
+# 3. 기존 Public Subnet 정보 조회
+data "aws_subnets" "public" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.existing.id]
+  }
+  # 제공해주신 Public Subnet ID 목록
+  ids = ["subnet-03369a6e7ce789929", "subnet-0907d17d229b2213c"]
+}
+
+# 4. 기존 RDS 정보 조회
+data "aws_db_instance" "existing_rds" {
+  db_instance_identifier = "seoul-free-db"
+}
+
+# -----------------------------------------------------------------------------
+# EKS 클러스터 및 Bastion Host 생성
+# -----------------------------------------------------------------------------
+
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "20.8.4"
@@ -39,68 +61,57 @@ module "eks" {
   cluster_name    = var.cluster_name
   cluster_version = "1.29"
 
-  vpc_id     = module.vpc.vpc_id
-  subnet_ids = module.vpc.private_subnets
+  vpc_id                          = data.aws_vpc.existing.id
+  subnet_ids                      = data.aws_subnets.private.ids
+  cluster_endpoint_public_access  = true
 
-  # EKS API 서버 엔드포인트를 외부에서 접속할 수 있도록 활성화
-  cluster_endpoint_public_access = true
+  eks_managed_node_group_defaults = {
+    # 워커 노드에 app-server-sg 보안 그룹을 연결합니다.
+    vpc_security_group_ids = [var.app_server_sg_id]
+  }
 
   eks_managed_node_groups = {
-    default = {
+    default_nodes = {
       min_size     = 1
       max_size     = 3
       desired_size = 2
       instance_types = ["t3.medium"]
-      key_name       = "Seoul-ec22-key"
+      key_name = "Seoul-ec22-key"
     }
   }
 }
 
-# --- 3. RDS 데이터베이스 ---
-resource "aws_db_subnet_group" "app_rds_subnet_group" {
-  name       = "app-rds-subnet-group-for-eks"
-  subnet_ids = module.vpc.private_subnets
-}
+resource "aws_instance" "bastion" {
+  ami           = "ami-0c9c942bd7bf113a2" # Amazon Linux 2023 AMI (서울 리전 기준)
+  instance_type = "t2.micro"
+  
+  # 퍼블릭 서브넷 중 첫 번째 서브넷에 배치합니다.
+  subnet_id = data.aws_subnets.public.ids[0]
+  
+  # Bastion Host에 monitoring-sg 보안 그룹을 적용합니다.
+  vpc_security_group_ids = [var.monitoring_sg_id]
+  
+  key_name = "Seoul-ec22-key"
 
-resource "aws_security_group" "rds_sg" {
-  name        = "app-rds-access-sg"
-  description = "Allow EKS nodes to access RDS"
-  vpc_id      = module.vpc.vpc_id
-
-  ingress {
-    from_port       = 3306
-    to_port         = 3306
-    protocol        = "tcp"
-    security_groups = [module.eks.node_security_group_id]
-  }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  tags = {
+    Name = "Bastion-Host-for-Alpha-v2"
   }
 }
 
-resource "aws_db_instance" "app_db" {
-  identifier           = "weather-app-db"
-  allocated_storage    = 20
-  engine               = "mysql"
-  engine_version       = "8.0"
-  instance_class       = "db.t3.micro"
-  db_name              = var.db_name
-  username             = var.db_username
-  password             = var.db_password
-  db_subnet_group_name = aws_db_subnet_group.app_rds_subnet_group.name
-  vpc_security_group_ids = [aws_security_group.rds_sg.id]
-  skip_final_snapshot  = true
+# -----------------------------------------------------------------------------
+# 출력 값 (Outputs)
+# -----------------------------------------------------------------------------
+output "bastion_public_ip" {
+  description = "The public IP address of the Bastion Host"
+  value       = aws_instance.bastion.public_ip
 }
 
-# --- 4. 출력 값 ---
 output "rds_endpoint" {
-  description = "The endpoint of the RDS instance"
-  value       = aws_db_instance.app_db.endpoint
+  description = "The endpoint of the existing RDS instance"
+  value       = data.aws_db_instance.existing_rds.endpoint
 }
-output "rds_db_name" {
-  description = "The name of the database"
-  value       = aws_db_instance.app_db.db_name
+
+output "eks_cluster_endpoint" {
+  description = "EKS Cluster API endpoint"
+  value       = module.eks.cluster_endpoint
 }

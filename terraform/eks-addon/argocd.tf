@@ -9,7 +9,9 @@ resource "helm_release" "argocd_seoul" {
   atomic           = true
 
   values = []
-  kubeconfig = data.aws_eks_cluster_auth.seoul_auth.token
+
+  provider = helm.seoul
+
   depends_on = [module.eks_seoul]
 }
 
@@ -24,6 +26,8 @@ resource "helm_release" "argocd_tokyo" {
   atomic           = true
 
   values = []
-  kubeconfig = data.aws_eks_cluster_auth.tokyo_auth.token
+
+  provider = helm.tokyo
+
   depends_on = [module.eks_tokyo]
 }

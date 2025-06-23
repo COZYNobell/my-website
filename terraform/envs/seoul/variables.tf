@@ -1,27 +1,23 @@
-# terraform/envs/seoul/variables.tf
-
-variable "vpc_cidr_block" {
-  description = "The CIDR block for the VPC (passed from root)"
+variable "region" {
+  description = "AWS Region"
   type        = string
+  default     = "ap-northeast-2"
 }
 
-variable "db_name" {
-  description = "The name of the RDS database (passed from root: db_name_seoul)"
+variable "vpc_id" {
+  description = "VPC ID for the EKS cluster"
   type        = string
+  default     = "vpc-01dc2534a77a00126"
 }
 
-variable "db_user" {
-  description = "The username for the RDS database (passed from root)"
-  type        = string
+variable "public_subnet_ids" {
+  description = "Public subnet IDs"
+  type        = list(string)
+  default     = ["subnet-xxxxxx1", "subnet-xxxxxx2"]  # 실제 ID로 수정
 }
 
-variable "db_password" {
-  description = "The password for the RDS database (passed from root)"
-  type        = string
-  sensitive   = true
-}
-
-variable "route53_zone_id" {
-  description = "The hosted zone ID for Route53 (passed from root)"
-  type        = string
+variable "private_subnet_ids" {
+  description = "Private subnet IDs"
+  type        = list(string)
+  default     = ["subnet-yyyyyy1", "subnet-yyyyyy2"]  # 실제 ID로 수정
 }

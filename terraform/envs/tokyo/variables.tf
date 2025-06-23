@@ -1,0 +1,32 @@
+# terraform/envs/tokyo/variables.tf
+
+variable "vpc_cidr_block" {
+  description = "The CIDR block for the VPC (passed from root)"
+  type        = string
+}
+
+variable "db_name" {
+  description = "The name of the RDS database (passed from root: db_name_tokyo)"
+  type        = string
+}
+
+variable "db_user" {
+  description = "The username for the RDS database (passed from root)"
+  type        = string
+}
+
+variable "db_password" {
+  description = "The password for the RDS database (passed from root)"
+  type        = string
+  sensitive   = true
+}
+
+variable "route53_zone_id" {
+  description = "The hosted zone ID for Route53 (passed from root)"
+  type        = string
+}
+
+variable "primary_rds_arn" {
+  description = "ARN of the primary RDS in Seoul for CRRR replication (passed from root)"
+  type        = string
+}

@@ -1,5 +1,6 @@
-# ~/terraform/modules/network/main.tf
+# terraform/modules/network/main.tf
 
+# 1. VPC 생성
 resource "aws_vpc" "this" {
   cidr_block           = var.vpc_cidr_block
   enable_dns_hostnames = true
@@ -10,6 +11,7 @@ resource "aws_vpc" "this" {
   }
 }
 
+# 2. 퍼블릭 서브넷 생성
 resource "aws_subnet" "public" {
   for_each = toset(var.public_subnet_cidrs)
 
@@ -23,6 +25,7 @@ resource "aws_subnet" "public" {
   }
 }
 
+# 3. 프라이빗 서브넷 생성
 resource "aws_subnet" "private" {
   for_each = toset(var.private_subnet_cidrs)
 
@@ -35,12 +38,10 @@ resource "aws_subnet" "private" {
   }
 }
 
+# 4. 인터넷 게이트웨이 및 라우팅 설정
 resource "aws_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
-
-  tags = {
-    Name = "main-igw"
-  }
+  tags = { Name = "main-igw" }
 }
 
 resource "aws_route_table" "public" {
@@ -50,38 +51,33 @@ resource "aws_route_table" "public" {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.this.id
   }
-
-  tags = {
-    Name = "public-rt"
-  }
+  tags = { Name = "public-rt" }
 }
 
 resource "aws_route_table_association" "public" {
-  for_each = aws_subnet.public
-
+  for_each       = aws_subnet.public
   subnet_id      = each.value.id
   route_table_id = aws_route_table.public.id
 }
 
+# 5. RDS를 위한 서브넷 그룹 및 보안 그룹
 resource "aws_db_subnet_group" "this" {
   name       = "rds-subnet-group"
   subnet_ids = [for s in aws_subnet.private : s.id]
-
-  tags = {
-    Name = "rds-subnet-group"
-  }
+  tags       = { Name = "rds-subnet-group" }
 }
 
 resource "aws_security_group" "rds" {
   name        = "rds-sg"
-  description = "Allow MySQL"
+  description = "Allow MySQL traffic from app servers"
   vpc_id      = aws_vpc.this.id
 
   ingress {
-    from_port   = 3306
-    to_port     = 3306
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # 실제 배포 시 제한 권장
+    from_port       = 3306
+    to_port         = 3306
+    protocol        = "tcp"
+    # 실제 운영 시에는 app_server_sg의 ID를 참조하는 것이 더 안전합니다.
+    cidr_blocks     = ["0.0.0.0/0"] 
   }
   
   egress {
@@ -90,15 +86,13 @@ resource "aws_security_group" "rds" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-  tags = {
-    Name = "rds-sg"
-  }
+  tags = { Name = "rds-sg" }
 }
 
-resource "aws_security_group" "alb_sg" {
+# 6. ALB를 위한 보안 그룹
+resource "aws_security_group" "alb" {
   name        = "alb-sg"
-  description = "Allow HTTP traffic"
+  description = "Allow HTTP traffic from anywhere"
   vpc_id      = aws_vpc.this.id
 
   ingress {
@@ -114,8 +108,5 @@ resource "aws_security_group" "alb_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  
-  tags = {
-    Name = "alb-sg"
-  }
+  tags = { Name = "alb-sg" }
 }

@@ -10,9 +10,8 @@ resource "helm_release" "argocd_seoul" {
 
   values = []
 
-  provider = helm.seoul
-
   depends_on = [module.eks_seoul]
+  provider   = helm.seoul
 }
 
 resource "helm_release" "argocd_tokyo" {
@@ -27,7 +26,6 @@ resource "helm_release" "argocd_tokyo" {
 
   values = []
 
-  provider = helm.tokyo
-
   depends_on = [module.eks_tokyo]
+  provider   = helm.tokyo
 }

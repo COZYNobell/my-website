@@ -1,4 +1,4 @@
-# ~/terraform/modules/network/outputs.tf
+# terraform/modules/network/outputs.tf
 
 output "vpc_id" {
   description = "The ID of the VPC"
@@ -6,26 +6,21 @@ output "vpc_id" {
 }
 
 output "public_subnets" {
-  description = "List of public subnet IDs"
+  description = "List of IDs for the public subnets"
   value       = [for s in aws_subnet.public : s.id]
 }
 
-output "private_subnets" {
-  description = "List of private subnet IDs"
-  value       = [for s in aws_subnet.private : s.id]
-}
-
 output "private_subnet_group" {
-  description = "Name of the DB subnet group"
+  description = "The name of the DB Subnet Group"
   value       = aws_db_subnet_group.this.name
 }
 
 output "rds_sg_id" {
-  description = "ID of the RDS security group"
+  description = "The ID of the security group for RDS"
   value       = aws_security_group.rds.id
 }
 
 output "alb_sg_id" {
-  description = "ID of the ALB security group"
-  value       = aws_security_group.alb_sg.id
+  description = "The ID of the security group for the ALB"
+  value       = aws_security_group.alb.id
 }

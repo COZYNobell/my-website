@@ -1,21 +1,21 @@
-# ~/terraform/modules/network/variables.tf
+# terraform/modules/network/variables.tf
 
 variable "vpc_cidr_block" {
+  description = "The CIDR block for the VPC"
   type        = string
-  description = "CIDR block for the VPC"
 }
 
 variable "public_subnet_cidrs" {
+  description = "List of CIDR blocks for public subnets"
   type        = list(string)
-  description = "List of CIDRs for public subnets"
 }
 
 variable "private_subnet_cidrs" {
+  description = "List of CIDR blocks for private subnets"
   type        = list(string)
-  description = "List of CIDRs for private subnets"
 }
 
 variable "availability_zones" {
+  description = "List of Availability Zones for the subnets"
   type        = list(string)
-  description = "AZs corresponding to the subnets"
 }

@@ -1,98 +1,109 @@
-# terraform/modules/network/main.tf
-
-# 1. VPC 생성
-resource "aws_vpc" "this" {
+# VPC
+resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr_block
-  enable_dns_hostnames = true
   enable_dns_support   = true
+  enable_dns_hostnames = true
 
   tags = {
-    Name = "main-vpc"
+    Name = "vpc-main"
   }
 }
 
-# 2. 퍼블릭 서브넷 생성
+# Public Subnets
 resource "aws_subnet" "public" {
-  for_each = toset(var.public_subnet_cidrs)
-
-  vpc_id                = aws_vpc.this.id
-  cidr_block            = each.value
-  availability_zone     = element(var.availability_zones, index(var.public_subnet_cidrs, each.value))
+  count                   = length(var.public_subnet_cidrs)
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = var.public_subnet_cidrs[count.index]
+  availability_zone       = var.availability_zones[count.index]
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "public-subnet-${each.key}"
+    Name = "subnet-public-${count.index}"
   }
 }
 
-# 3. 프라이빗 서브넷 생성
+# Private Subnets
 resource "aws_subnet" "private" {
-  for_each = toset(var.private_subnet_cidrs)
-
-  vpc_id            = aws_vpc.this.id
-  cidr_block        = each.value
-  availability_zone = element(var.availability_zones, index(var.private_subnet_cidrs, each.value))
+  count             = length(var.private_subnet_cidrs)
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = var.private_subnet_cidrs[count.index]
+  availability_zone = var.availability_zones[count.index]
 
   tags = {
-    Name = "private-subnet-${each.key}"
+    Name = "subnet-private-${count.index}"
   }
 }
 
-# 4. 인터넷 게이트웨이 및 라우팅 설정
-resource "aws_internet_gateway" "this" {
-  vpc_id = aws_vpc.this.id
-  tags = { Name = "main-igw" }
+# Internet Gateway
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "igw-main"
+  }
 }
 
+# EIP + NAT Gateway
+resource "aws_eip" "nat" {
+  vpc = true
+}
+
+resource "aws_nat_gateway" "nat" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public[0].id
+
+  tags = {
+    Name = "nat-main"
+  }
+
+  depends_on = [aws_internet_gateway.igw]
+}
+
+# Route Tables - Public
 resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.this.id
+  vpc_id = aws_vpc.main.id
 
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.this.id
+    gateway_id = aws_internet_gateway.igw.id
   }
-  tags = { Name = "public-rt" }
+
+  tags = {
+    Name = "rt-public"
+  }
 }
 
 resource "aws_route_table_association" "public" {
-  for_each       = aws_subnet.public
-  subnet_id      = each.value.id
+  count          = length(var.public_subnet_cidrs)
+  subnet_id      = aws_subnet.public[count.index].id
   route_table_id = aws_route_table.public.id
 }
 
-# 5. RDS를 위한 서브넷 그룹 및 보안 그룹
-resource "aws_db_subnet_group" "this" {
-  name       = "rds-subnet-group"
-  subnet_ids = [for s in aws_subnet.private : s.id]
-  tags       = { Name = "rds-subnet-group" }
+# Route Tables - Private
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat.id
+  }
+
+  tags = {
+    Name = "rt-private"
+  }
 }
 
-resource "aws_security_group" "rds" {
-  name        = "rds-sg"
-  description = "Allow MySQL traffic from app servers"
-  vpc_id      = aws_vpc.this.id
-
-  ingress {
-    from_port       = 3306
-    to_port         = 3306
-    protocol        = "tcp"
-    cidr_blocks     = ["0.0.0.0/0"] 
-  }
-  
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  tags = { Name = "rds-sg" }
+resource "aws_route_table_association" "private" {
+  count          = length(var.private_subnet_cidrs)
+  subnet_id      = aws_subnet.private[count.index].id
+  route_table_id = aws_route_table.private.id
 }
 
-# 6. ALB를 위한 보안 그룹
+# Security Groups
 resource "aws_security_group" "alb" {
   name        = "alb-sg"
-  description = "Allow HTTP traffic from anywhere"
-  vpc_id      = aws_vpc.this.id
+  description = "Allow HTTP inbound"
+  vpc_id      = aws_vpc.main.id
 
   ingress {
     from_port   = 80
@@ -107,5 +118,24 @@ resource "aws_security_group" "alb" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  tags = { Name = "alb-sg" }
+}
+
+resource "aws_security_group" "rds" {
+  name        = "rds-sg"
+  description = "Allow MySQL from internal"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port       = 3306
+    to_port         = 3306
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 }

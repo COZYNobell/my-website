@@ -1,4 +1,14 @@
-# 1. 네트워크 모듈 호출
+# ------------------------------------------
+# 서울 리전의 기존 RDS 정보 참조 (data source)
+# ------------------------------------------
+data "aws_db_instance" "seoul_primary" {
+  provider = aws.seoul
+  db_instance_identifier = "seoul-free-db"
+}
+
+# ------------------------------------------
+# 네트워크 모듈 호출 (도쿄)
+# ------------------------------------------
 module "network" {
   source = "../../modules/network"
 
@@ -8,7 +18,9 @@ module "network" {
   availability_zones   = ["ap-northeast-1a", "ap-northeast-1c"]
 }
 
-# 2. RDS 복제본 (서울 RDS의 Read Replica)
+# ------------------------------------------
+# RDS 복제본 (도쿄 리전)
+# ------------------------------------------
 module "rds" {
   source             = "../../modules/rds"
 
@@ -22,11 +34,13 @@ module "rds" {
   security_group_ids = [module.network.rds_sg_id]
   multi_az           = false
 
-  # 서울의 RDS ARN을 기반으로 Read Replica 생성
-  replicate_source_db = var.primary_rds_arn
+  # ✅ 서울 RDS에서 가져온 ARN을 복제 원본으로 지정
+  replicate_source_db = data.aws_db_instance.seoul_primary.arn
 }
 
-# 3. ALB 모듈 호출
+# ------------------------------------------
+# ALB 모듈 호출
+# ------------------------------------------
 module "alb" {
   source          = "../../modules/alb"
 
@@ -36,7 +50,9 @@ module "alb" {
   security_groups = [module.network.alb_sg_id]
 }
 
-# 4. Autoscaling 모듈 호출
+# ------------------------------------------
+# EC2 오토스케일링 모듈
+# ------------------------------------------
 module "autoscaling" {
   source             = "../../modules/autoscaling"
 
@@ -48,7 +64,9 @@ module "autoscaling" {
   db_host            = module.rds.endpoint
 }
 
-# 5. Route53 레코드
+# ------------------------------------------
+# Route53 레코드 등록 (도쿄용 CNAME)
+# ------------------------------------------
 module "route53" {
   source      = "../../modules/route53"
 
@@ -57,7 +75,9 @@ module "route53" {
   cname_value = module.rds.endpoint
 }
 
-# 최신 AMI
+# ------------------------------------------
+# 최신 Amazon Linux 2 AMI 조회
+# ------------------------------------------
 data "aws_ami" "amazon_linux" {
   most_recent = true
   owners      = ["amazon"]

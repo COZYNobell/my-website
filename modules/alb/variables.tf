@@ -1,21 +1,15 @@
-# ~/terraform/modules/alb/variables.tf
-
 variable "alb_name" {
-  type        = string
-  description = "Name for the ALB and related resources"
+  type = string
 }
 
 variable "vpc_id" {
-  type        = string
-  description = "VPC ID where the ALB is deployed"
+  type = string
 }
 
 variable "subnets" {
-  type        = list(string)
-  description = "List of subnet IDs to deploy the ALB"
+  type = list(string)
 }
 
 variable "security_groups" {
-  type        = list(string)
-  description = "Security groups to attach to the ALB"
+  type = list(string)
 }

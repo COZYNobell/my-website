@@ -6,20 +6,36 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
         labels:
-          server_role: '모니터링서버' # Prometheus 자신에게도 라벨 추가
+          server_role: '모니터링서버'
+          region: '서울'
 
   - job_name: 'node_exporter'
     static_configs:
-      - targets: ['10.0.2.90:9100'] # app-ec2
+      # 서울 리전 서버
+      - targets: 
+          - '10.0.2.90:9100'   # 서울 애플리케이션 서버
+          - '10.0.2.163:9100'  # 서울 모니터링 서버
         labels:
-          server_role: '웹서버' # ✨ '웹서버' 역할 라벨 추가
-      - targets: ['10.0.2.163:9100'] # monitering-ec2
+          server_role: '웹서버'
+          region: '서울'
+      # 도쿄 리전 서버
+      - targets:
+          - '10.10.2.5:9100'   # 도쿄 애플리케이션 서버
+          - '10.10.2.71:9100'  # 도쿄 모니터링 서버
         labels:
-          server_role: '모니터링서버' # ✨ '모니터링서버' 역할 라벨 추가
+          server_role: '웹서버' # 역할은 동일하게
+          region: '도쿄'
 
   - job_name: 'weather_app'
     metrics_path: /metrics
     static_configs:
-      - targets: ['10.0.2.90:9100'] # app-ec2
+      # 서울 리전 애플리케이션
+      - targets: ['10.0.2.90:80']
         labels:
           server_role: '웹서버'
+          region: '서울'
+      # 도쿄 리전 애플리케이션
+      - targets: ['10.10.2.5:80']
+        labels:
+          server_role: '웹서버'
+          region: '도쿄'

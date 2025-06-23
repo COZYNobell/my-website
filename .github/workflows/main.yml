@@ -16,13 +16,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-northeast-2
+          aws-region: ap-northeast-2 # ECR이 서울에 있으므로 기준 리전은 서울로 설정
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -91,9 +90,11 @@ jobs:
             CONTAINER_NAME="seoul-app-prod"
             IMAGE_URI="${{ needs.build-and-push.outputs.image_uri }}"
 
+            # 서울 ECR에 로그인
             aws ecr get-login-password --region ap-northeast-2 | sudo docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
             
             sudo docker pull $IMAGE_URI
+            
             if [ "$(sudo docker ps -q -f name=$CONTAINER_NAME)" ]; then sudo docker stop $CONTAINER_NAME; fi
             if [ "$(sudo docker ps -aq -f name=$CONTAINER_NAME)" ]; then sudo docker rm $CONTAINER_NAME; fi
             
@@ -106,12 +107,12 @@ jobs:
               -e SESSION_SECRET="${{ secrets.SESSION_SECRET }}" \
               -e OPENWEATHERMAP_API_KEY_SECRET="${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }}" \
               -e MAPS_API_KEY_SECRET="${{ secrets.MAPS_API_KEY_SECRET }}" \
-              -e SNS_TOPIC_ARN="${{ secrets.SNS_TOPIC_ARN }}" \
+              -e SNS_TOPIC_ARN="${{ secrets.SNS_TOPIC_ARN_SEOUL }}" \
               $IMAGE_URI
             
             echo "✅ Seoul EC2 deployment complete!"
 
-  # 3-2단계: 도쿄 리전에 애플리케이션 배포
+  # ✨ 3-2단계: 도쿄 리전에 애플리케이션 배포 (신규 추가된 작업) ✨
   deploy-to-tokyo:
     name: Deploy App to EC2 (Tokyo)
     runs-on: ubuntu-latest
@@ -135,9 +136,11 @@ jobs:
             CONTAINER_NAME="tokyo-app-prod"
             IMAGE_URI="${{ needs.build-and-push.outputs.image_uri }}"
 
-            aws ecr get-login-password --region ap-northeast-1 | sudo docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-1.amazonaws.com
+            # ECR은 서울에 있으므로, 도쿄 서버에서도 서울 ECR에 로그인합니다.
+            aws ecr get-login-password --region ap-northeast-2 | sudo docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
             
             sudo docker pull $IMAGE_URI
+            
             if [ "$(sudo docker ps -q -f name=$CONTAINER_NAME)" ]; then sudo docker stop $CONTAINER_NAME; fi
             if [ "$(sudo docker ps -aq -f name=$CONTAINER_NAME)" ]; then sudo docker rm $CONTAINER_NAME; fi
             
@@ -150,7 +153,7 @@ jobs:
               -e SESSION_SECRET="${{ secrets.SESSION_SECRET }}" \
               -e OPENWEATHERMAP_API_KEY_SECRET="${{ secrets.OPENWEATHERMAP_API_KEY_SECRET }}" \
               -e MAPS_API_KEY_SECRET="${{ secrets.MAPS_API_KEY_SECRET }}" \
-              -e SNS_TOPIC_ARN="${{ secrets.SNS_TOPIC_ARN }}" \
+              -e SNS_TOPIC_ARN="${{ secrets.SNS_TOPIC_ARN_TOKYO }}" \
               $IMAGE_URI
             
             echo "✅ Tokyo EC2 deployment complete!"

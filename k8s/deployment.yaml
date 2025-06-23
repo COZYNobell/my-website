@@ -5,7 +5,7 @@ metadata:
   labels:
     app: my-website
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: my-website
@@ -16,25 +16,32 @@ spec:
     spec:
       containers:
         - name: my-website
-          image: <ECR_IMAGE_URI>
+          image: 501257812675.dkr.ecr.ap-northeast-2.amazonaws.com/my-node-app:latest
           ports:
             - containerPort: 3000
           env:
             - name: NODE_ENV
               value: "production"
-            - name: DB_HOST
-              value: "<DB_HOST>"
-            - name: DB_USER
-              value: "<DB_USER>"
-            - name: DB_PASSWORD
-              value: "<DB_PASSWORD>"
-            - name: DB_NAME
-              value: "<DB_NAME>"
-            - name: SESSION_SECRET
-              value: "<SESSION_SECRET>"
-            - name: OPENWEATHERMAP_API_KEY_SECRET
-              value: "<OPENWEATHERMAP_API_KEY>"
-            - name: MAPS_API_KEY_SECRET
-              value: "<MAPS_API_KEY_SECRET>"
-            - name: SNS_TOPIC_ARN
-              value: "<SNS_TOPIC_ARN>"
+            - name: MYSQL_HOST
+              value: "your-mysql-host.rds.amazonaws.com"
+            - name: MYSQL_USER
+              value: "your-db-user"
+            - name: MYSQL_PASSWORD
+              value: "your-db-password"
+            - name: MYSQL_DATABASE
+              value: "your-db-name"
+            - name: API_KEY
+              value: "your-weather-api-key"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-website-service
+spec:
+  selector:
+    app: my-website
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3000
+  type: LoadBalancer

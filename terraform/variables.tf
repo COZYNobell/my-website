@@ -1,28 +1,25 @@
-# terraform/variables.tf
-
-variable "aws_region" {
-  description = "The AWS region to deploy resources in."
+variable "route53_zone_id" {
+  description = "Route53 Hosted Zone ID"
   type        = string
-  default     = "ap-northeast-2"
 }
 
 variable "db_name_seoul" {
-  description = "The DB name for the Seoul RDS database"
+  description = "DB name for Seoul RDS"
   type        = string
 }
 
 variable "db_name_tokyo" {
-  description = "The DB name for the Tokyo RDS database"
+  description = "DB name for Tokyo RDS"
+  type        = string
+}
+
+variable "db_user" {
+  description = "Database user"
   type        = string
 }
 
 variable "db_password" {
-  description = "The password for the RDS database"
+  description = "Database password"
   type        = string
-  sensitive   = true # 이 값은 Terraform 로그에 표시되지 않습니다.
-}
-
-variable "route53_zone_id" {
-  description = "The hosted zone ID for Route53"
-  type        = string
+  sensitive   = true
 }

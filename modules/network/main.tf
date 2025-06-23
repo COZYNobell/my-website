@@ -76,7 +76,6 @@ resource "aws_security_group" "rds" {
     from_port       = 3306
     to_port         = 3306
     protocol        = "tcp"
-    # 실제 운영 시에는 app_server_sg의 ID를 참조하는 것이 더 안전합니다.
     cidr_blocks     = ["0.0.0.0/0"] 
   }
   

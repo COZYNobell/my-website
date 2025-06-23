@@ -1,10 +1,7 @@
-# ~/terraform/modules/route53/main.tf
-
-resource "aws_route53_record" "this" {
+resource "aws_route53_record" "cname" {
   zone_id = var.zone_id
   name    = var.record_name
   type    = "CNAME"
-  ttl     = 60
-
+  ttl     = 300
   records = [var.cname_value]
 }

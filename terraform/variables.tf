@@ -1,25 +1,25 @@
 variable "route53_zone_id" {
-  description = "Route53 Hosted Zone ID"
   type        = string
+  description = "Route53 Hosted Zone ID"
 }
 
 variable "db_name_seoul" {
-  description = "DB name for Seoul RDS"
   type        = string
+  description = "DB name for Seoul"
 }
 
 variable "db_name_tokyo" {
-  description = "DB name for Tokyo RDS"
   type        = string
+  description = "DB name for Tokyo"
 }
 
 variable "db_user" {
-  description = "Database user"
   type        = string
+  description = "Database username"
 }
 
 variable "db_password" {
-  description = "Database password"
   type        = string
+  description = "Database password"
   sensitive   = true
 }

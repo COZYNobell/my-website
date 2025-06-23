@@ -1,11 +1,7 @@
-output "seoul_rds_endpoint" {
-  value = module.seoul.rds_endpoint
+output "seoul_eks_cluster_name" {
+  value = aws_eks_cluster.alpha_eks_seoul.name
 }
 
-output "tokyo_rds_endpoint" {
-  value = module.tokyo.rds_endpoint
-}
-
-output "global_alb_dns" {
-  value = module.seoul.alb_dns_name
+output "tokyo_eks_cluster_name" {
+  value = aws_eks_cluster.alpha_eks_tokyo.name
 }

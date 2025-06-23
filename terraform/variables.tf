@@ -1,25 +1,20 @@
-variable "route53_zone_id" {
+# --- 공통 도메인 / 인증서 ARN ---
+variable "seoul_acm_arn" {
+  description = "서울 리전 ACM 인증서 ARN"
   type        = string
-  description = "Route53 Hosted Zone ID"
 }
 
-variable "db_name_seoul" {
+variable "tokyo_acm_arn" {
+  description = "도쿄 리전 ACM 인증서 ARN"
   type        = string
-  description = "DB name for Seoul"
 }
 
-variable "db_name_tokyo" {
+variable "seoul_argocd_domain" {
+  description = "서울 ArgoCD 도메인"
   type        = string
-  description = "DB name for Tokyo"
 }
 
-variable "db_user" {
+variable "tokyo_argocd_domain" {
+  description = "도쿄 ArgoCD 도메인"
   type        = string
-  description = "Database username"
-}
-
-variable "db_password" {
-  type        = string
-  description = "Database password"
-  sensitive   = true
 }

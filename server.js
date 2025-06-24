@@ -1,152 +1,150 @@
+// 📄 파일명: server.js
+// ✅ 버전: v3 (메트릭 모듈 적용)
+// ✅ 설명: metrics.js 모듈을 사용하여 코드를 간결하게 만들고, 커스텀 메트릭을 기록합니다.
+// 🕒 날짜: 2025-06-24
+
 // 1. 필요한 모듈 가져오기
 const express = require('express');
 const axios = require('axios');
-require('dotenv').config(); 
+require('dotenv').config();
 const session = require('express-session');
 const bcrypt = require('bcrypt');
 const mysql = require('mysql2/promise');
 const path = require('path');
-const client = require('prom-client');
 const { SNSClient, SubscribeCommand } = require("@aws-sdk/client-sns");
+
+// ✨ 우리가 만든 metrics.js 모듈을 가져옵니다.
+const { register, httpRequestDurationMicroseconds, usersRegisteredCounter } = require('./metrics');
 
 // 2. Express 앱 생성 및 포트 설정
 const app = express();
 const port = process.env.PORT || 3000;
 const IS_DEVELOPMENT = process.env.NODE_ENV !== 'production';
 
-// --- AWS 및 Prometheus 클라이언트 초기화 ---
+// --- AWS 클라이언트 및 DB 풀 초기화 ---
 const snsClient = new SNSClient({ region: process.env.AWS_REGION || "ap-northeast-2" });
-const register = new client.Registry();
-client.collectDefaultMetrics({ register, prefix: 'nodejs_app_', labels: { app: 'my-weather-app' } });
-const httpRequestDurationMicroseconds = new client.Histogram({
-  name: 'http_request_duration_seconds',
-  help: 'Duration of HTTP requests in seconds',
-  labelNames: ['method', 'route', 'status_code'],
-  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10] 
-});
-register.registerMetric(httpRequestDurationMicroseconds);
-
-// 환경 변수 로드 확인 로그
-console.log("애플리케이션 시작 - .env 파일 로드");
-console.log("DB_HOST:", process.env.DB_HOST);
-console.log("DB_USER:", process.env.DB_USER);
-console.log("DB_PASSWORD (존재 여부만):", process.env.DB_PASSWORD ? "설정됨" : "설정 안됨");
-console.log("DB_NAME:", process.env.DB_NAME);
-console.log("SESSION_SECRET (존재 여부만):", process.env.SESSION_SECRET ? "설정됨" : "설정 안됨");
-console.log("OPENWEATHERMAP_API_KEY_SECRET (존재 여부만):", process.env.OPENWEATHERMAP_API_KEY_SECRET ? "설정됨" : "설정 안됨");
-console.log("MAPS_API_KEY_SECRET (존재 여부만):", process.env.MAPS_API_KEY_SECRET ? "설정됨" : "설정 안됨");
-console.log("SNS_TOPIC_ARN (존재 여부만):", process.env.SNS_TOPIC_ARN ? "설정됨" : "설정 안됨");
-console.log("NODE_ENV:", process.env.NODE_ENV);
-// MySQL Connection Pool 설정
 const dbPool = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 });
 
 // 데이터베이스 초기화 함수
 async function initializeDatabase() {
-  let connection;
-  try {
-    connection = await dbPool.getConnection(); 
-    console.log(`MySQL 서버 (${process.env.DB_HOST})에 성공적으로 연결되었습니다.`);
-    const dbNameToUse = process.env.DB_NAME;
-    if (!dbNameToUse) throw new Error("DB_NAME 환경 변수가 설정되지 않았습니다!");
-    
-    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbNameToUse}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
-    await connection.query(`USE \`${dbNameToUse}\`;`);
-    
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT, email VARCHAR(255) UNIQUE NOT NULL, password VARCHAR(255) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
-    console.log("🟢 users 테이블 준비 완료.");
+    let connection;
+    try {
+        connection = await dbPool.getConnection();
+        console.log(`MySQL 서버 (${process.env.DB_HOST})에 성공적으로 연결되었습니다.`);
+        const dbNameToUse = process.env.DB_NAME;
+        if (!dbNameToUse) throw new Error("DB_NAME 환경 변수가 설정되지 않았습니다!");
 
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS favorites (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT, user_id INTEGER NOT NULL, location_name TEXT NOT NULL, latitude DECIMAL(10, 8) NOT NULL, longitude DECIMAL(11, 8) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
-    console.log("🟢 favorites 테이블 준비 완료.");
+        await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbNameToUse}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+        await connection.query(`USE \`${dbNameToUse}\`;`);
 
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS weather_subscriptions (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT, user_id INTEGER NOT NULL, favorite_id INTEGER NOT NULL, condition_type VARCHAR(50) NOT NULL, condition_value VARCHAR(50) NULL, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY (favorite_id) REFERENCES favorites(id) ON DELETE CASCADE, UNIQUE KEY unique_user_favorite_condition (user_id, favorite_id, condition_type) 
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
-    console.log("🟢 weather_subscriptions 테이블 준비 완료.");
-    
-    console.log(`✅ 데이터베이스 '${dbNameToUse}' 및 모든 테이블이 성공적으로 준비되었습니다.`);
-  } catch (error) {
-    console.error("🔴 데이터베이스 초기화 중 심각한 오류 발생:", error.message);
-  } finally {
-    if (connection) connection.release();
-  }
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTO_INCREMENT, email VARCHAR(255) UNIQUE NOT NULL, password VARCHAR(255) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+        console.log("🟢 users 테이블 준비 완료.");
+
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS favorites (
+                id INTEGER PRIMARY KEY AUTO_INCREMENT, user_id INTEGER NOT NULL, location_name TEXT NOT NULL, latitude DECIMAL(10, 8) NOT NULL, longitude DECIMAL(11, 8) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+        console.log("🟢 favorites 테이블 준비 완료.");
+
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS weather_subscriptions (
+                id INTEGER PRIMARY KEY AUTO_INCREMENT, user_id INTEGER NOT NULL, favorite_id INTEGER NOT NULL, condition_type VARCHAR(50) NOT NULL, condition_value VARCHAR(50) NULL, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY (favorite_id) REFERENCES favorites(id) ON DELETE CASCADE, UNIQUE KEY unique_user_favorite_condition (user_id, favorite_id, condition_type) 
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+        console.log("🟢 weather_subscriptions 테이블 준비 완료.");
+        
+        console.log(`✅ 데이터베이스 '${dbNameToUse}' 및 모든 테이블이 성공적으로 준비되었습니다.`);
+    } catch (error) {
+        console.error("🔴 데이터베이스 초기화 중 심각한 오류 발생:", error.message);
+        process.exit(1); // 심각한 오류 시 프로세스 종료
+    } finally {
+        if (connection) connection.release();
+    }
 }
-
 initializeDatabase();
-// --- 미들웨어 설정 ---
-app.use(express.static(path.join(__dirname, 'public'))); 
-app.use(express.urlencoded({ extended: true })); 
-app.use(express.json()); 
 
+// --- 미들웨어 설정 ---
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+
+// ✨ 요청 시간을 측정하는 미들웨어 (metrics.js의 변수 사용)
 app.use((req, res, next) => {
   const end = httpRequestDurationMicroseconds.startTimer();
   res.on('finish', () => {
     let route = req.route ? req.route.path : req.path;
-    if (route === '/') route = '/';
-    route = route.replace(/\/\d+/g, '/:id');
+    if (route === '/') route = '/'; // 루트 경로 통일
+    route = route.replace(/\/\d+/g, '/:id'); // 동적 파라미터 일반화 (예: /api/favorites/1 -> /api/favorites/:id)
     end({ method: req.method, route, status_code: res.statusCode });
   });
   next();
 });
 
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'default_fallback_secret', 
-  resave: false,
-  saveUninitialized: false, 
-  cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 } 
+    secret: process.env.SESSION_SECRET || 'default_fallback_secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: !IS_DEVELOPMENT, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 }
 }));
 
 function ensureAuthenticated(req, res, next) {
-    if (IS_DEVELOPMENT) console.log(`[DEBUG] Path: ${req.path}, Authenticated: ${req.session.isAuthenticated}`);
-    if (req.session.isAuthenticated && req.session.user) return next(); 
+    if (req.session.isAuthenticated && req.session.user) return next();
     if (req.path.startsWith('/api/')) return res.status(401).json({ message: '로그인이 필요합니다.', redirectTo: '/login.html' });
-    res.redirect(`/login.html?message=${encodeURIComponent('로그인이 필요합니다.')}`); 
+    res.redirect(`/login.html?message=${encodeURIComponent('로그인이 필요합니다.')}`);
 }
+
 // --- HTML 페이지 라우트 ---
 app.get('/signup', (req, res) => res.sendFile(path.join(__dirname, 'public', 'signup.html')));
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
 app.get('/dashboard.html', ensureAuthenticated, (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
 app.get('/subscribe', ensureAuthenticated, (req, res) => res.sendFile(path.join(__dirname, 'public', 'subscribe.html')));
+app.get('/', (req, res) => {
+    if (req.session.isAuthenticated && req.session.user) {
+        res.redirect('/dashboard.html');
+    } else {
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    }
+});
 
-// --- 인증 API 라우트 (오류 시 리디렉션 방식) ---
+// --- 인증 API 라우트 ---
 app.post('/signup', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.redirect(`/signup.html?error=${encodeURIComponent('이메일과 비밀번호를 모두 입력해주세요.')}`);
+    
     let connection;
     try {
         connection = await dbPool.getConnection();
         await connection.query(`USE \`${process.env.DB_NAME}\``);
-        const [existingUsers] = await connection.query("SELECT * FROM users WHERE email = ?", [email]);
-        if (existingUsers.length > 0) return res.redirect(`/signup.html?error=${encodeURIComponent('이미 가입된 이메일입니다.')}`);
+        const [existingUsers] = await connection.query("SELECT id FROM users WHERE email = ?", [email]);
+        if (existingUsers.length > 0) {
+            return res.redirect(`/signup.html?error=${encodeURIComponent('이미 가입된 이메일입니다.')}`);
+        }
+
         const hashedPassword = await bcrypt.hash(password, 10);
         await connection.query("INSERT INTO users (email, password) VALUES (?, ?)", [email, hashedPassword]);
+        
+        // ✨ 회원가입 성공 시, 커스텀 메트릭 카운터 1 증가
+        usersRegisteredCounter.inc(); 
+        
         console.log(`새 사용자 가입됨: ${email}`);
-
-        if (process.env.SNS_TOPIC_ARN) {
-            const snsParams = { Protocol: "email", TopicArn: process.env.SNS_TOPIC_ARN, Endpoint: email };
-            await snsClient.send(new SubscribeCommand(snsParams));
-            console.log("📧 SNS 구독 요청 완료:", email);
-        } else {
-            console.warn("🟡 SNS_TOPIC_ARN 환경 변수가 설정되지 않아, SNS 구독 요청을 건너뜁니다.");
-        }
-        res.redirect(`/login.html?signup=success&email=${encodeURIComponent(email)}`); 
+        await subscribeUserToSns(email);
+        res.redirect(`/login.html?signup=success&email=${encodeURIComponent(email)}`);
     } catch (error) {
-        console.error("회원가입 오류:", error.message, error.stack);
+        console.error("회원가입 오류:", error.message);
         res.redirect(`/signup.html?error=${encodeURIComponent('서버 오류가 발생했습니다.')}`);
-    } finally { if (connection) connection.release(); }
+    } finally {
+        if (connection) connection.release();
+    }
 });
 
 app.post('/login', async (req, res) => {
@@ -171,7 +169,9 @@ app.post('/login', async (req, res) => {
     } catch (error) {
         console.error("로그인 오류:", error.message, error.stack);
         res.redirect(`/login.html?error=${encodeURIComponent('서버 오류가 발생했습니다.')}`);
-    } finally { if (connection) connection.release(); }
+    } finally {
+        if (connection) connection.release();
+    }
 });
 
 app.get('/logout', (req, res) => {
@@ -182,7 +182,9 @@ app.get('/logout', (req, res) => {
             console.log(`사용자 (${userEmail}) 로그아웃 성공`);
             res.redirect('/?logout=success'); 
         });
-    } else { res.redirect('/'); }
+    } else {
+        res.redirect('/');
+    }
 });
 
 // --- 기능 API 라우트 ---
@@ -212,7 +214,9 @@ app.post('/api/favorites', ensureAuthenticated, async (req, res) => {
             return res.status(409).json({ message: '이미 즐겨찾기에 추가된 장소일 수 있습니다.' }); 
         }
         return res.status(500).json({ message: `즐겨찾기 추가 중 서버 오류가 발생했습니다: ${error.message}` });
-    } finally { if (connection) connection.release(); }
+    } finally {
+        if (connection) connection.release();
+    }
 });
 
 app.get('/api/favorites', ensureAuthenticated, async (req, res) => {
@@ -227,7 +231,9 @@ app.get('/api/favorites', ensureAuthenticated, async (req, res) => {
     } catch (error) { 
         console.error("즐겨찾기 조회 중 DB 오류:", error.message, error.stack); 
         return res.status(500).json({ message: `즐겨찾기 목록을 불러오는 중 오류가 발생했습니다: ${error.message}` });
-    } finally { if (connection) connection.release(); }
+    } finally {
+        if (connection) connection.release();
+    }
 });
 
 app.delete('/api/favorites/:id', ensureAuthenticated, async (req, res) => {
@@ -248,7 +254,9 @@ app.delete('/api/favorites/:id', ensureAuthenticated, async (req, res) => {
     } catch (error) { 
         console.error("즐겨찾기 삭제 중 DB 오류:", error.message, error.stack); 
         return res.status(500).json({ message: `즐겨찾기 삭제 중 오류가 발생했습니다: ${error.message}` });
-    } finally { if (connection) connection.release(); }
+    } finally {
+        if (connection) connection.release();
+    }
 });
 
 app.post('/api/weather-subscriptions', ensureAuthenticated, async (req, res) => {
@@ -283,7 +291,9 @@ app.post('/api/weather-subscriptions', ensureAuthenticated, async (req, res) => 
             return res.status(409).json({ message: '이미 해당 즐겨찾기에 동일한 조건으로 구독되어 있습니다.' });
         }
         return res.status(500).json({ message: `날씨 구독 추가 중 서버 오류가 발생했습니다: ${error.message}` });
-    } finally { if (connection) connection.release(); }
+    } finally {
+        if (connection) connection.release();
+    }
 });
 
 app.get('/api/weather-subscriptions', ensureAuthenticated, async (req, res) => {
@@ -302,7 +312,9 @@ app.get('/api/weather-subscriptions', ensureAuthenticated, async (req, res) => {
     } catch (error) {
         console.error("날씨 구독 목록 조회 중 DB 오류:", error.message, error.stack);
         res.status(500).json({ message: `날씨 구독 목록을 불러오는 중 오류가 발생했습니다.` });
-    } finally { if (connection) connection.release(); }
+    } finally {
+        if (connection) connection.release();
+    }
 });
 
 app.delete('/api/weather-subscriptions/:id', ensureAuthenticated, async (req, res) => {
@@ -322,12 +334,13 @@ app.delete('/api/weather-subscriptions/:id', ensureAuthenticated, async (req, re
     } catch (error) {
         console.error("날씨 구독 취소 중 DB 오류:", error.message, error.stack);
         res.status(500).json({ message: `날씨 구독 취소 중 오류가 발생했습니다.` });
-    } finally { if (connection) connection.release(); }
+    } finally {
+        if (connection) connection.release();
+    }
 });
 
 app.get('/api/weather-by-coords', async (req, res) => {
     const { lat, lon } = req.query;
-    console.log(`[DEBUG] /api/weather-by-coords 요청 수신: lat=${lat}, lon=${lon}`);
     if (!lat || !lon) return res.status(400).json({ message: '위도(lat)와 경도(lon) 파라미터가 필요합니다.' });
     const apiKey = process.env.OPENWEATHERMAP_API_KEY_SECRET || process.env.OPENWEATHERMAP_API_KEY;
     if (!apiKey) {
@@ -336,9 +349,7 @@ app.get('/api/weather-by-coords', async (req, res) => {
     }
     const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&lang=kr`;
     try {
-        console.log(`[DEBUG] OpenWeatherMap API 호출 (현재 날씨): ${weatherUrl}`);
         const response = await axios.get(weatherUrl);
-        console.log(`🟢 OpenWeatherMap API 응답 (현재 날씨) 성공. 상태 코드: ${response.status}`);
         const weatherData = response.data;
         res.json({ 
             description: weatherData.weather[0].description, 
@@ -349,26 +360,21 @@ app.get('/api/weather-by-coords', async (req, res) => {
             icon: weatherData.weather[0].icon 
         });
     } catch (error) { 
-        console.error('❌ 좌표 기반 날씨 정보 가져오기 실패:', error.message, error.response ? `[Status: ${error.response.status}]` : '응답 없음'); 
-        if (error.response) console.error('[DEBUG] 외부 API 오류 응답 데이터:', error.response.data);
+        console.error('❌ 좌표 기반 날씨 정보 가져오기 실패:', error.message); 
         res.status(500).json({ message: '날씨 정보를 가져오는 데 실패했습니다.' }); 
     }
 });
 
 app.get('/api/weather-forecast', async (req, res) => {
     const { lat, lon } = req.query;
-    console.log(`[DEBUG] /api/weather-forecast 요청 수신: lat=${lat}, lon=${lon}`);
     const apiKey = process.env.OPENWEATHERMAP_API_KEY_SECRET || process.env.OPENWEATHERMAP_API_KEY;
     if (!apiKey) {
-        console.error('🔴 OpenWeatherMap API 키가 설정되지 않았습니다.');
         return res.status(500).json({ message: '서버에 날씨 API 키가 설정되지 않았습니다.' });
     }
     const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&lang=kr`;
     try {
-        console.log(`[DEBUG] OpenWeatherMap API 호출 (주간 예보): ${forecastUrl}`);
         const response = await axios.get(forecastUrl);
         const forecastData = response.data;
-        console.log(`🟢 OpenWeatherMap API 응답 (주간 예보) 성공. 상태 코드: ${response.status}.`);
         const dailyForecasts = {};
         forecastData.list.forEach(item => { 
             const date = item.dt_txt.split(' ')[0]; 
@@ -388,20 +394,10 @@ app.get('/api/weather-forecast', async (req, res) => {
                 icon: dayData.icons[Math.floor(dayData.icons.length / 2)].replace('n', 'd')
             });
         });
-        console.log(`[DEBUG] 예보 데이터 처리 완료. 응답 전송.`);
         res.json({ cityName: forecastData.city.name, forecast: processedForecast });
     } catch (error) { 
-        console.error('❌ 날씨 예보 정보 가져오기 실패:', error.message, error.response ? `[Status: ${error.response.status}]` : '응답 없음'); 
-        if (error.response) console.error('[DEBUG] 외부 API 오류 응답 데이터:', error.response.data);
+        console.error('❌ 날씨 예보 정보 가져오기 실패:', error.message); 
         res.status(500).json({ message: '날씨 예보 정보를 가져오는 데 실패했습니다.' }); 
-    }
-});
-
-app.get('/', (req, res) => {
-    if (req.session.isAuthenticated && req.session.user) {
-        res.redirect('/dashboard.html');
-    } else {
-        res.sendFile(path.join(__dirname, 'public', 'index.html'));
     }
 });
 
@@ -415,13 +411,16 @@ app.get('/healthz', async (req, res) => {
     } catch (error) {
         console.error("🔴 헬스 체크 실패:", error.message);
         res.status(503).json({ status: 'error', message: 'Application is unhealthy', error: error.message });
-    } finally { if (connection) connection.release(); }
+    } finally {
+        if (connection) connection.release();
+    }
 });
 
+// ✨ 프로메테우스가 데이터를 수집해갈 수 있는 /metrics 엔드포인트
 app.get('/metrics', async (req, res) => {
   try {
     res.set('Content-Type', register.contentType);
-    res.end(await register.metrics());
+    res.end(await register.metrics()); // metrics.js에서 가져온 register 사용
   } catch (ex) {
     console.error("Error serving /metrics:", ex);
     res.status(500).end(ex.message || ex.toString());
@@ -430,5 +429,5 @@ app.get('/metrics', async (req, res) => {
 
 // 서버 실행
 app.listen(port, () => {
-  console.log(`와! ${port}번 포트에서 웹사이트가 열렸어요!`);
+  console.log(`✅ 서버가 성공적으로 실행되었습니다. http://localhost:${port}`);
 });

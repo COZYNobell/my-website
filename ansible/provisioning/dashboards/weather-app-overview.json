@@ -13,81 +13,97 @@
     { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.2.2" },
     { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
   ],
-  "annotations": { "list": [ { "builtIn": 1, "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "hide": true, "iconColor": "rgba(0, 211, 255, 1)", "name": "Annotations & Alerts", "type": "dashboard" } ] },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1, "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)", "name": "Annotations & Alerts", "type": "dashboard"
+      },
+      {
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true, "iconColor": "#52B433", "name": "배포 기록", "tags": [ "deployment" ], "type": "tags"
+      }
+    ]
+  },
   "editable": true,
   "panels": [
     {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
-      "id": 100,
-      "panels": [],
-      "title": "주요 비즈니스 현황",
-      "type": "row"
+      "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "id": 100, "panels": [],
+      "title": "주요 비즈니스 현황", "type": "row"
     },
     {
       "id": 101,
-      "title": "총 가입 사용자 수",
-      "type": "stat",
+      "title": "시간별 총 가입자 수 추이",
+      "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
-      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 1 },
-      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "" }, "textMode": "auto" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 1 },
+      "options": {
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }
+      },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 20, "gradientMode": "opacity", "lineInterpolation": "smooth", "lineWidth": 2 } } },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
-          "expr": "users_registered_total",
+          "expr": "sum(increase(users_registered_total{job=\"weather_app\"}[5m]))",
+          "legendFormat": "신규 가입자 수",
           "refId": "A"
         }
       ]
     },
     {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
-      "id": 17,
-      "panels": [],
-      "title": "1. 서버 인프라 상태",
-      "type": "row"
+      "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }, "id": 110, "panels": [],
+      "title": "사용자 행동 흐름 (Funnel)", "type": "row"
     },
     {
-      "id": 9, "title": "서버 CPU 사용률", "type": "gauge", "gridPos": { "h": 8, "w": 8, "x": 0, "y": 7 },
-      "targets": [ { "expr": "avg by (server_role) (100 - (rate(node_cpu_seconds_total{job=\"node_exporter\", mode=\"idle\"}[5m]) * 100))", "legendFormat": "{{server_role}}" } ]
+      "id": 111, "title": "1. 총 방문", "type": "stat", "gridPos": { "h": 5, "w": 8, "x": 0, "y": 10 },
+      "targets": [ { "expr": "sum(increase(http_requests_total{route=\"/\", job=\"weather_app\"}[$__range]))" } ]
     },
     {
-      "id": 10, "title": "서버 메모리 사용률", "type": "gauge", "gridPos": { "h": 8, "w": 8, "x": 8, "y": 7 },
-      "targets": [ { "expr": "avg by (server_role) (100 * (1 - (node_memory_MemAvailable_bytes{job=\"node_exporter\"} / node_memory_MemTotal_bytes{job=\"node_exporter\"})))", "legendFormat": "{{server_role}}" } ]
+      "id": 112, "title": "2. 회원가입 시도", "type": "stat", "gridPos": { "h": 5, "w": 8, "x": 8, "y": 10 },
+      "targets": [ { "expr": "sum(increase(http_requests_total{route=\"/signup\", job=\"weather_app\"}[$__range]))" } ]
     },
     {
-      "id": 18, "title": "서버 네트워크 트래픽", "type": "timeseries", "gridPos": { "h": 8, "w": 8, "x": 16, "y": 7 },
+      "id": 113, "title": "3. 가입 완료", "type": "stat", "gridPos": { "h": 5, "w": 8, "x": 16, "y": 10 },
+      "targets": [ { "expr": "sum(increase(users_registered_total{job=\"weather_app\"}[$__range]))" } ]
+    },
+    {
+      "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 }, "id": 17, "panels": [],
+      "title": "서버 인프라 상태", "type": "row"
+    },
+    {
+      "id": 9, "title": "서버 CPU 사용률", "type": "gauge", "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "targets": [ { "expr": "avg by (region, server_role) (100 - (rate(node_cpu_seconds_total{job=\"node_exporter\", mode=\"idle\"}[5m]) * 100))", "legendFormat": "{{region}} {{server_role}}" } ]
+    },
+    {
+      "id": 10, "title": "서버 메모리 사용률", "type": "gauge", "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "targets": [ { "expr": "avg by (region, server_role) (100 * (1 - (node_memory_MemAvailable_bytes{job=\"node_exporter\"} / node_memory_MemTotal_bytes{job=\"node_exporter\"})))", "legendFormat": "{{region}} {{server_role}}" } ]
+    },
+    {
+      "id": 18, "title": "리전별 네트워크 트래픽", "type": "timeseries", "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
       "targets": [
-        { "expr": "sum by (server_role, instance) (rate(node_network_receive_bytes_total{job=\"node_exporter\"}[5m]))", "legendFormat": "{{server_role}} ({{instance}}) - 수신" },
-        { "expr": "sum by (server_role, instance) (rate(node_network_transmit_bytes_total{job=\"node_exporter\"}[5m]))", "legendFormat": "{{server_role}} ({{instance}}) - 송신" }
+        { "expr": "sum by (region) (rate(node_network_receive_bytes_total{job=\"node_exporter\"}[5m]))", "legendFormat": "{{region}} - 수신(RX)" },
+        { "expr": "sum by (region) (rate(node_network_transmit_bytes_total{job=\"node_exporter\"}[5m]))", "legendFormat": "{{region}} - 송신(TX)" }
       ]
     },
     {
-      "collapsed": true,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
-      "id": 16,
-      "panels": [],
-      "title": "2. 애플리케이션 주요 현황",
-      "type": "row"
+      "collapsed": true, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 }, "id": 16, "panels": [],
+      "title": "애플리케이션 주요 현황", "type": "row"
     },
-    { "id": 7, "title": "총 요청 수", "type": "stat", "gridPos": { "h": 5, "w": 8, "x": 0, "y": 16 }, "targets": [ { "expr": "sum(increase(http_request_duration_seconds_count{job=\"weather_app\"}[$__range]))" } ] },
-    { "id": 8, "title": "총 서버 에러 (5xx)", "type": "stat", "gridPos": { "h": 5, "w": 8, "x": 8, "y": 16 }, "targets": [ { "expr": "sum(increase(http_request_duration_seconds_count{job=\"weather_app\", status_code=~\"5..\"}[$__range]))" } ] },
-    { "id": 13, "title": "총 클라이언트 에러 (4xx)", "type": "stat", "gridPos": { "h": 5, "w": 8, "x": 16, "y": 16 }, "targets": [ { "expr": "sum(increase(http_request_duration_seconds_count{job=\"weather_app\", status_code=~\"4..\"}[$__range]))" } ] },
+    { "id": 7, "title": "총 요청 수 (전체)", "type": "stat", "gridPos": { "h": 5, "w": 8, "x": 0, "y": 25 }, "targets": [ { "expr": "sum(increase(http_request_duration_seconds_count{job=\"weather_app\"}[$__range]))" } ] },
+    { "id": 8, "title": "총 서버 에러 (5xx)", "type": "stat", "gridPos": { "h": 5, "w": 8, "x": 8, "y": 25 }, "targets": [ { "expr": "sum(increase(http_request_duration_seconds_count{job=\"weather_app\", status_code=~\"5..\"}[$__range]))" } ] },
+    { "id": 13, "title": "총 클라이언트 에러 (4xx)", "type": "stat", "gridPos": { "h": 5, "w": 8, "x": 16, "y": 25 }, "targets": [ { "expr": "sum(increase(http_request_duration_seconds_count{job=\"weather_app\", status_code=~\"4..\"}[$__range]))" } ] },
     {
-      "collapsed": true,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 },
-      "id": 15,
-      "panels": [],
-      "title": "3. 애플리케이션 성능 상세",
-      "type": "row"
+      "collapsed": true, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 }, "id": 15, "panels": [],
+      "title": "애플리케이션 성능 상세", "type": "row"
     },
-    { "id": 2, "title": "API 경로별 요청 빈도", "type": "timeseries", "gridPos": { "h": 8, "w": 8, "x": 0, "y": 22 }, "targets": [ { "expr": "sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route)", "legendFormat": "{{route}}" } ] },
-    { "id": 4, "title": "API 경로별 평균 응답 속도", "type": "timeseries", "gridPos": { "h": 8, "w": 8, "x": 8, "y": 22 }, "targets": [ { "expr": "sum(rate(http_request_duration_seconds_sum{job=\"weather_app\"}[5m])) by (route) / sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route)", "legendFormat": "{{route}}" } ] },
-    { "id": 11, "title": "95%ile 응답 속도", "type": "timeseries", "gridPos": { "h": 8, "w": 8, "x": 16, "y": 22 }, "targets": [ { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"weather_app\"}[5m])) by (le, route))", "legendFormat": "{{route}}" } ] },
-    { "id": 12, "title": "가장 인기 있는 API Top 5", "type": "table", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 }, "targets": [ { "expr": "topk(5, sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route))", "legendFormat": "{{route}}", "instant": true } ] },
-    { "id": 14, "title": "가장 느린 API Top 5", "type": "table", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 }, "targets": [ { "expr": "topk(5, sum(rate(http_request_duration_seconds_sum{job=\"weather_app\"}[5m])) by (route) / sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route))", "legendFormat": "{{route}}", "instant": true } ] }
+    { "id": 2, "title": "API 경로별 요청 빈도", "type": "timeseries", "gridPos": { "h": 8, "w": 8, "x": 0, "y": 31 }, "targets": [ { "expr": "sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route)", "legendFormat": "{{route}}" } ] },
+    { "id": 4, "title": "API 경로별 평균 응답 속도", "type": "timeseries", "gridPos": { "h": 8, "w": 8, "x": 8, "y": 31 }, "targets": [ { "expr": "sum(rate(http_request_duration_seconds_sum{job=\"weather_app\"}[5m])) by (route) / sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route)", "legendFormat": "{{route}}" } ] },
+    { "id": 11, "title": "95%ile 응답 속도", "type": "timeseries", "gridPos": { "h": 8, "w": 8, "x": 16, "y": 31 }, "targets": [ { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"weather_app\"}[5m])) by (le, route))", "legendFormat": "{{route}}" } ] },
+    { "id": 12, "title": "가장 인기 있는 API Top 5", "type": "table", "gridPos": { "h": 8, "w": 12, "x": 0, "y": 39 }, "targets": [ { "expr": "topk(5, sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route))", "legendFormat": "{{route}}", "instant": true } ] },
+    { "id": 14, "title": "가장 느린 API Top 5", "type": "table", "gridPos": { "h": 8, "w": 12, "x": 12, "y": 39 }, "targets": [ { "expr": "topk(5, sum(rate(http_request_duration_seconds_sum{job=\"weather_app\"}[5m])) by (route) / sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[5m])) by (route))", "legendFormat": "{{route}}", "instant": true } ] }
   ],
   "title": "날씨 앱 종합 현황판",
   "uid": "my-weather-app-dashboard",
-  "version": 18
+  "version": 20
 }

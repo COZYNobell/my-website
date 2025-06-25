@@ -3,7 +3,7 @@
 # ✅ 설명: provision-servers 작업이 이미지 URI를 후속 배포 작업에 전달하도록 수정했습니다.
 # 🕒 날짜: 2025-06-23
 
-name: Deploy App and Monitoring to Multi-Region EC2
+name: Deploy App and Monitoring to Multi-Region EKS
 
 on:
   push:
@@ -44,7 +44,7 @@ jobs:
 
   # 2단계: Ansible 프로비저닝 (모든 서버 대상)
   provision-servers:
-    name: Provision All EC2 Instances with Ansible
+    name: Provision All EKS Instances with Ansible
     runs-on: ubuntu-latest
     needs: build-and-push
     # ✨ 추가된 부분: build-and-push 작업의 결과물을 받아, 다음 작업에 전달합니다.
@@ -66,7 +66,7 @@ jobs:
 
   # 3-1단계: 서울 리전에 애플리케이션 배포
   deploy-to-seoul:
-    name: Deploy App to EC2 (Seoul)
+    name: Deploy App to EKS (Seoul)
     runs-on: ubuntu-latest
     needs: provision-servers
     steps:
@@ -109,7 +109,7 @@ jobs:
 
   # 3-2단계: 도쿄 리전에 애플리케이션 배포
   deploy-to-tokyo:
-    name: Deploy App to EC2 (Tokyo)
+    name: Deploy App to EKS (Tokyo)
     runs-on: ubuntu-latest
     needs: provision-servers
     steps:

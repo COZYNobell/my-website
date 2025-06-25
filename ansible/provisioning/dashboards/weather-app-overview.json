@@ -30,14 +30,8 @@
           "mappings": [
             {
               "options": {
-                "0": {
-                  "color": "red",
-                  "text": "DOWN"
-                },
-                "1": {
-                  "color": "green",
-                  "text": "UP"
-                }
+                "0": { "color": "red", "text": "DOWN" },
+                "1": { "color": "green", "text": "UP" }
               },
               "type": "value"
             }
@@ -45,49 +39,21 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
             ]
           }
-        },
-        "overrides": []
+        }
       },
-      "gridPos": {
-        "h": 4,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
       "id": 20,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "value_and_name",
-        "wideLayout": true
+        "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal",
+        "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false },
+        "textMode": "value_and_name"
       },
-      "pluginVersion": "11.0.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
           "expr": "up{job=~\"$job\"}",
           "legendFormat": "{{server_role}} ({{instance}})",
           "refId": "A"
@@ -97,250 +63,105 @@
       "type": "stat"
     },
     {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 4
-      },
-      "id": 17,
-      "panels": [],
-      "title": "1. 서버 인프라 상태",
-      "type": "row"
+      "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 4 }, "id": 17, "panels": [],
+      "title": "1. 서버 인프라 상태", "type": "row"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "my-prometheus-ds-unique-id"
-      },
+      "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
       "description": "CPU 부하를 나타냅니다!",
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 5
-      },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 80 } ] }, "unit": "percent" } },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 5 },
       "id": 9,
-      "options": {
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "unit": "percent"
-      },
+      "options": { "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ] }, "showThresholdLabels": false, "showThresholdMarkers": true },
       "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
-          "expr": "avg by (server_role) (100 - (rate(node_cpu_seconds_total{job=~\"$job\", mode=\"idle\"}[30s]) * 100))",
-          "legendFormat": "{{server_role}}",
-          "refId": "A"
-        }
+        { "expr": "avg by (server_role) (100 - (rate(node_cpu_seconds_total{job=~\"$job\", mode=\"idle\"}[30s]) * 100))", "legendFormat": "{{server_role}}", "refId": "A" }
       ],
       "title": "서버 CPU 사용률 (30초 평균)",
       "type": "gauge"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "my-prometheus-ds-unique-id"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 5
-      },
+      "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 80 } ] }, "unit": "percent" } },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 5 },
       "id": 10,
-      "options": {
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "unit": "percent"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
-          "expr": "avg by (server_role) (100 * (1 - (node_memory_MemAvailable_bytes{job=~\"$job\"} / node_memory_MemTotal_bytes{job=~\"$job\"})))",
-          "legendFormat": "{{server_role}}",
-          "refId": "A"
-        }
-      ],
+      "options": { "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ] }, "showThresholdLabels": false, "showThresholdMarkers": true },
+      "targets": [ { "expr": "avg by (server_role) (100 * (1 - (node_memory_MemAvailable_bytes{job=~\"$job\"} / node_memory_MemTotal_bytes{job=~\"$job\"})))", "legendFormat": "{{server_role}}", "refId": "A" } ],
       "title": "서버 메모리 사용률",
       "type": "gauge"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "my-prometheus-ds-unique-id"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
-          },
-          "mappings": []
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 5
-      },
+      "datasource": { "type": "prometheus", "uid": "my-prometheus-ds-unique-id" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } } },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 5 },
       "id": 18,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "pieType": "pie",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "pieType": "pie", "reduceOptions": { "calcs": [ "lastNotNull" ] }, "tooltip": { "mode": "single" } },
       "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
-          "expr": "sum by (server_role, region) (rate(node_network_receive_bytes_total{job=~\"$job\"}[30s]))",
-          "legendFormat": "{{region}} {{server_role}} - 수신",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "my-prometheus-ds-unique-id"
-          },
-          "expr": "sum by (server_role, region) (rate(node_network_transmit_bytes_total{job=~\"$job\"}[30s]))",
-          "legendFormat": "{{region}} {{server_role}} - 송신",
-          "refId": "B"
-        }
+        { "expr": "sum by (server_role, region) (rate(node_network_receive_bytes_total{job=~\"$job\"}[30s]))", "legendFormat": "{{region}} {{server_role}} - 수신(RX)", "refId": "A" },
+        { "expr": "sum by (server_role, region) (rate(node_network_transmit_bytes_total{job=~\"$job\"}[30s]))", "legendFormat": "{{region}} {{server_role}} - 송신(TX)", "refId": "B" }
       ],
       "title": "서버 네트워크 트래픽",
       "type": "piechart"
+    },
+    {
+      "collapsed": true, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 }, "id": 16, "panels": [],
+      "title": "2. 애플리케이션 주요 현황 (weather_app Job)", "type": "row"
+    },
+    {
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 14 }, "id": 7, "title": "총 요청 수", "type": "stat",
+      "targets": [ { "expr": "sum(increase(http_request_duration_seconds_count{job=\"weather_app\"}[$__range]))" } ]
+    },
+    {
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 14 }, "id": 8, "title": "총 서버 에러 (5xx)", "type": "stat",
+      "targets": [ { "expr": "sum(increase(http_request_duration_seconds_count{job=\"weather_app\", status_code=~\"5..\"}[$__range]))" } ]
+    },
+    {
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 14 }, "id": 13, "title": "총 클라이언트 에러 (4xx)", "type": "stat",
+      "targets": [ { "expr": "sum(increase(http_request_duration_seconds_count{job=\"weather_app\", status_code=~\"4..\"}[$__range]))" } ]
+    },
+    {
+      "collapsed": true, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 }, "id": 15, "panels": [],
+      "title": "3. 애플리케이션 성능 상세 (weather_app Job)", "type": "row"
+    },
+    {
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 20 }, "id": 2, "title": "API 경로별 요청 빈도", "type": "timeseries",
+      "targets": [ { "expr": "sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[30s])) by (route)", "legendFormat": "{{route}}" } ]
+    },
+    {
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 20 }, "id": 4, "title": "API 경로별 평균 응답 속도", "type": "timeseries", "options": { "unit": "s" },
+      "targets": [ { "expr": "sum(rate(http_request_duration_seconds_sum{job=\"weather_app\"}[30s])) by (route) / sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[30s])) by (route)", "legendFormat": "{{route}}" } ]
+    },
+    {
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 20 }, "id": 11, "title": "95%ile 응답 속도", "type": "timeseries", "options": { "unit": "s" },
+      "targets": [ { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"weather_app\"}[30s])) by (le, route))", "legendFormat": "{{route}}" } ]
+    },
+    {
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 }, "id": 12, "title": "가장 인기 있는 API Top 5", "type": "table",
+      "targets": [ { "expr": "topk(5, sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[30s])) by (route))", "instant": true, "legendFormat": "{{route}}" } ]
+    },
+    {
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 }, "id": 14, "title": "가장 느린 API Top 5", "type": "table", "options": { "unit": "s" },
+      "targets": [ { "expr": "topk(5, sum(rate(http_request_duration_seconds_sum{job=\"weather_app\"}[30s])) by (route) / sum(rate(http_request_duration_seconds_count{job=\"weather_app\"}[30s])) by (route))", "instant": true, "legendFormat": "{{route}}" } ]
     }
   ],
   "templating": {
     "list": [
       {
-        "current": {
-          "selected": true,
-          "text": "Prometheus",
-          "value": "my-prometheus-ds-unique-id"
-        },
-        "hide": 2,
-        "name": "datasource",
-        "options": [],
-        "query": "prometheus",
-        "skipUrlSync": false,
-        "type": "datasource"
+        "current": { "selected": true, "text": "Prometheus", "value": "my-prometheus-ds-unique-id" },
+        "hide": 2, "name": "datasource", "query": "prometheus", "skipUrlSync": false, "type": "datasource"
       },
       {
-        "allValue": null,
-        "current": {
-          "selected": true,
-          "text": "All",
-          "value": [
-            "$__all"
-          ]
-        },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
-        "definition": "label_values(up, job)",
-        "hide": 0,
-        "includeAll": true,
-        "label": "Job",
-        "multi": true,
-        "name": "job",
-        "options": [],
-        "query": {
-          "query": "label_values(up, job)",
-          "refId": "StandardVariableQuery"
-        },
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 0,
-        "type": "query"
+        "allValue": null, "current": { "selected": true, "text": "All", "value": [ "$__all" ] },
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(up, job)", "hide": 0, "includeAll": true, "label": "Job",
+        "multi": true, "name": "job", "options": [], "query": { "query": "label_values(up, job)", "refId": "StandardVariableQuery" },
+        "refresh": 1, "skipUrlSync": false, "sort": 0, "type": "query"
       }
     ]
   },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
   "title": "날씨 앱 종합 현황판",
   "uid": "my-weather-app-dashboard",
-  "version": 19
+  "version": 21
 }

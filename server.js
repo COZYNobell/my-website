@@ -1,6 +1,6 @@
 // 📄 파일명: server.js
-// ✅ 버전: v4 (테스트 API 추가)
-// ✅ 설명: 메트릭 값의 변화를 테스트하기 위한 임시 API 엔드포인트를 추가했습니다.
+// ✅ 버전: v5 (최종 복원 및 개선)
+// ✅ 설명: 이전에 생략되었던 모든 API 로직을 포함하고, metrics.js 모듈을 사용하도록 수정한 최종 완성본입니다.
 // 🕒 날짜: 2025-06-25
 
 // 1. 필요한 모듈 가져오기
@@ -78,12 +78,13 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+// ✨ 요청 시간을 측정하는 미들웨어 (metrics.js의 변수 사용)
 app.use((req, res, next) => {
   const end = httpRequestDurationMicroseconds.startTimer();
   res.on('finish', () => {
     let route = req.route ? req.route.path : req.path;
     if (route === '/') route = '/';
-    route = route.replace(/\/\d+/g, '/:id');
+    route = route.replace(/\/\d+$/, '/:id');
     end({ method: req.method, route, status_code: res.statusCode });
   });
   next();
@@ -97,10 +98,9 @@ app.use(session({
 }));
 
 function ensureAuthenticated(req, res, next) {
-    if (IS_DEVELOPMENT) console.log(`[DEBUG] Path: ${req.path}, Authenticated: ${req.session.isAuthenticated}`);
-    if (req.session.isAuthenticated && req.session.user) return next(); 
+    if (req.session.isAuthenticated && req.session.user) return next();
     if (req.path.startsWith('/api/')) return res.status(401).json({ message: '로그인이 필요합니다.', redirectTo: '/login.html' });
-    res.redirect(`/login.html?message=${encodeURIComponent('로그인이 필요합니다.')}`); 
+    res.redirect(`/login.html?message=${encodeURIComponent('로그인이 필요합니다.')}`);
 }
 
 // --- HTML 페이지 라우트 ---
@@ -145,15 +145,219 @@ app.post('/signup', async (req, res) => {
     } finally { if (connection) connection.release(); }
 });
 
-// --- 나머지 모든 API 라우트 핸들러들 ... ---
-
-// --- ✨ 테스트용 임시 API 엔드포인트 ✨ ---
-app.get('/api/test/increment-signup', (req, res) => {
-  usersRegisteredCounter.inc();
-  console.log('✅ [Test] users_registered_total 메트릭이 1 증가했습니다.');
-  res.status(200).send('OK: User registration counter incremented by 1.');
+app.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) return res.redirect(`/login.html?error=${encodeURIComponent('이메일과 비밀번호를 모두 입력해주세요.')}`);
+    let connection;
+    try {
+        connection = await dbPool.getConnection();
+        await connection.query(`USE \`${process.env.DB_NAME}\``);
+        const [users] = await connection.query("SELECT * FROM users WHERE email = ?", [email]);
+        if (users.length === 0) return res.redirect(`/login.html?error=${encodeURIComponent('이메일 또는 비밀번호가 일치하지 않습니다.')}`);
+        const user = users[0];
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (isMatch) {
+            req.session.user = { id: user.id, email: user.email };
+            req.session.isAuthenticated = true; 
+            console.log('사용자 로그인 성공:', req.session.user);
+            res.redirect('/dashboard.html'); 
+        } else {
+            return res.redirect(`/login.html?error=${encodeURIComponent('이메일 또는 비밀번호가 일치하지 않습니다.')}`);
+        }
+    } catch (error) {
+        console.error("로그인 오류:", error.message, error.stack);
+        res.redirect(`/login.html?error=${encodeURIComponent('서버 오류가 발생했습니다.')}`);
+    } finally { if (connection) connection.release(); }
 });
 
+app.get('/logout', (req, res) => {
+    if (req.session.user) {
+        const userEmail = req.session.user.email; 
+        req.session.destroy(err => { 
+            if (err) console.error('세션 파기 오류:', err);
+            console.log(`사용자 (${userEmail}) 로그아웃 성공`);
+            res.redirect('/?logout=success'); 
+        });
+    } else { res.redirect('/'); }
+});
+
+// --- 기능 API 라우트 ---
+app.get('/api/current-user', ensureAuthenticated, (req, res) => res.json({ loggedIn: true, user: req.session.user }));
+
+app.post('/api/favorites', ensureAuthenticated, async (req, res) => {
+    let connection; 
+    try {
+        connection = await dbPool.getConnection(); 
+        await connection.query(`USE \`${process.env.DB_NAME}\``);
+        const { location_name, latitude, longitude } = req.body;  
+        const userId = req.session.user.id; 
+        if (!location_name || latitude === undefined || longitude === undefined) {
+            return res.status(400).json({ message: '장소 이름, 위도, 경도가 모두 필요합니다.' });
+        }
+        const sql = `INSERT INTO favorites (user_id, location_name, latitude, longitude) VALUES (?, ?, ?, ?)`;
+        const params = [userId, location_name, latitude, longitude];
+        const [result] = await connection.query(sql, params);
+        res.status(201).json({ 
+            message: '즐겨찾기에 추가되었습니다.', 
+            favorite: { id: result.insertId, user_id: userId, location_name, latitude, longitude } 
+        });
+    } catch (error) { 
+        console.error("즐겨찾기 추가 중 DB 오류:", error.message, error.stack); 
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: '이미 즐겨찾기에 추가된 장소일 수 있습니다.' }); 
+        }
+        return res.status(500).json({ message: `즐겨찾기 추가 중 서버 오류가 발생했습니다: ${error.message}` });
+    } finally { if (connection) connection.release(); }
+});
+
+app.get('/api/favorites', ensureAuthenticated, async (req, res) => {
+    let connection; 
+    try {
+        connection = await dbPool.getConnection(); 
+        await connection.query(`USE \`${process.env.DB_NAME}\``);
+        const userId = req.session.user.id;
+        const sql = `SELECT id, location_name, latitude, longitude, created_at FROM favorites WHERE user_id = ? ORDER BY created_at DESC`;
+        const [rows] = await connection.query(sql, [userId]);
+        res.json(rows);
+    } catch (error) { 
+        console.error("즐겨찾기 조회 중 DB 오류:", error.message, error.stack); 
+        return res.status(500).json({ message: `즐겨찾기 목록을 불러오는 중 오류가 발생했습니다: ${error.message}` });
+    } finally { if (connection) connection.release(); }
+});
+
+app.delete('/api/favorites/:id', ensureAuthenticated, async (req, res) => {
+    let connection; 
+    try {
+        connection = await dbPool.getConnection(); 
+        await connection.query(`USE \`${process.env.DB_NAME}\``);
+        const favoriteId = req.params.id;  
+        const userId = req.session.user.id; 
+        const sql = `DELETE FROM favorites WHERE id = ? AND user_id = ?`;
+        const params = [favoriteId, userId];
+        const [result] = await connection.query(sql, params);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: '해당 즐겨찾기를 찾을 수 없거나 삭제할 권한이 없습니다.' });
+        }
+        res.json({ message: '즐겨찾기에서 삭제되었습니다.', favoriteId: parseInt(favoriteId) });
+    } catch (error) { 
+        console.error("즐겨찾기 삭제 중 DB 오류:", error.message, error.stack); 
+        return res.status(500).json({ message: `즐겨찾기 삭제 중 오류가 발생했습니다: ${error.message}` });
+    } finally { if (connection) connection.release(); }
+});
+
+app.post('/api/weather-subscriptions', ensureAuthenticated, async (req, res) => {
+    let connection;
+    try {
+        connection = await dbPool.getConnection();
+        await connection.query(`USE \`${process.env.DB_NAME}\``);
+        const { favorite_id, condition_type, condition_value } = req.body;
+        const userId = req.session.user.id;
+        if (favorite_id === undefined || !condition_type) {
+            return res.status(400).json({ message: '즐겨찾기 ID와 날씨 조건 종류는 필수입니다.' });
+        }
+        const sql = `INSERT INTO weather_subscriptions (user_id, favorite_id, condition_type, condition_value) VALUES (?, ?, ?, ?)`;
+        const params = [userId, favorite_id, condition_type, condition_value || null];
+        const [result] = await connection.query(sql, params);
+        res.status(201).json({ message: '날씨 구독 정보가 성공적으로 저장되었습니다.' });
+    } catch (error) {
+        console.error("날씨 구독 추가 중 DB 오류:", error.message, error.stack);
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: '이미 해당 즐겨찾기에 동일한 조건으로 구독되어 있습니다.' });
+        }
+        return res.status(500).json({ message: `날씨 구독 추가 중 서버 오류가 발생했습니다: ${error.message}` });
+    } finally { if (connection) connection.release(); }
+});
+
+app.get('/api/weather-subscriptions', ensureAuthenticated, async (req, res) => {
+    let connection;
+    try {
+        connection = await dbPool.getConnection();
+        await connection.query(`USE \`${process.env.DB_NAME}\``);
+        const userId = req.session.user.id;
+        const sql = `SELECT ws.id, f.location_name, ws.condition_type, ws.condition_value, ws.is_active FROM weather_subscriptions ws JOIN favorites f ON ws.favorite_id = f.id WHERE ws.user_id = ? ORDER BY ws.created_at DESC`;
+        const [subscriptions] = await connection.query(sql, [userId]);
+        res.json(subscriptions);
+    } catch (error) {
+        console.error("날씨 구독 목록 조회 중 DB 오류:", error.message, error.stack);
+        res.status(500).json({ message: `날씨 구독 목록을 불러오는 중 오류가 발생했습니다.` });
+    } finally { if (connection) connection.release(); }
+});
+
+app.delete('/api/weather-subscriptions/:id', ensureAuthenticated, async (req, res) => {
+    let connection;
+    try {
+        connection = await dbPool.getConnection();
+        await connection.query(`USE \`${process.env.DB_NAME}\``);
+        const subscriptionId = req.params.id;
+        const userId = req.session.user.id;
+        const sql = `DELETE FROM weather_subscriptions WHERE id = ? AND user_id = ?`;
+        const [result] = await connection.query(sql, [subscriptionId, userId]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: '해당 날씨 구독 정보를 찾을 수 없거나 삭제할 권한이 없습니다.' });
+        }
+        res.json({ message: '날씨 구독이 성공적으로 취소되었습니다.', subscriptionId: parseInt(subscriptionId) });
+    } catch (error) {
+        console.error("날씨 구독 취소 중 DB 오류:", error.message, error.stack);
+        res.status(500).json({ message: `날씨 구독 취소 중 오류가 발생했습니다.` });
+    } finally { if (connection) connection.release(); }
+});
+
+app.get('/api/weather-by-coords', async (req, res) => {
+    const { lat, lon } = req.query;
+    if (!lat || !lon) return res.status(400).json({ message: '위도(lat)와 경도(lon) 파라미터가 필요합니다.' });
+    const apiKey = process.env.OPENWEATHERMAP_API_KEY_SECRET || process.env.OPENWEATHERMAP_API_KEY;
+    if (!apiKey) return res.status(500).json({ message: '서버에 날씨 API 키가 설정되지 않았습니다.' });
+    const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&lang=kr`;
+    try {
+        const response = await axios.get(weatherUrl);
+        const weatherData = response.data;
+        res.json({ 
+            description: weatherData.weather[0].description, 
+            temperature: weatherData.main.temp, 
+            feels_like: weatherData.main.feels_like, 
+            humidity: weatherData.main.humidity, 
+            cityName: weatherData.name, 
+            icon: weatherData.weather[0].icon 
+        });
+    } catch (error) { 
+        console.error('❌ 좌표 기반 날씨 정보 가져오기 실패:', error.message); 
+        res.status(500).json({ message: '날씨 정보를 가져오는 데 실패했습니다.' }); 
+    }
+});
+
+app.get('/api/weather-forecast', async (req, res) => {
+    const { lat, lon } = req.query;
+    const apiKey = process.env.OPENWEATHERMAP_API_KEY_SECRET || process.env.OPENWEATHERMAP_API_KEY;
+    if (!apiKey) return res.status(500).json({ message: '서버에 날씨 API 키가 설정되지 않았습니다.' });
+    const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&lang=kr`;
+    try {
+        const response = await axios.get(forecastUrl);
+        const forecastData = response.data;
+        const dailyForecasts = {};
+        forecastData.list.forEach(item => { 
+            const date = item.dt_txt.split(' ')[0]; 
+            if (!dailyForecasts[date]) dailyForecasts[date] = { temps: [], weather_descriptions: [], icons: [] };
+            dailyForecasts[date].temps.push(item.main.temp); 
+            dailyForecasts[date].weather_descriptions.push(item.weather[0].description); 
+            dailyForecasts[date].icons.push(item.weather[0].icon); 
+        });
+        const processedForecast = []; 
+        Object.keys(dailyForecasts).slice(1, 4).forEach(date => {
+            const dayData = dailyForecasts[date];
+            processedForecast.push({
+                date: date,
+                temp_min: Math.min(...dayData.temps).toFixed(1),
+                temp_max: Math.max(...dayData.temps).toFixed(1),
+                description: dayData.weather_descriptions[Math.floor(dayData.weather_descriptions.length / 2)],
+                icon: dayData.icons[Math.floor(dayData.icons.length / 2)].replace('n', 'd')
+            });
+        });
+        res.json({ cityName: forecastData.city.name, forecast: processedForecast });
+    } catch (error) { 
+        console.error('❌ 날씨 예보 정보 가져오기 실패:', error.message); 
+        res.status(500).json({ message: '날씨 예보 정보를 가져오는 데 실패했습니다.' }); 
+    }
+});
 
 // --- 헬스 체크 및 메트릭 라우트 ---
 app.get('/healthz', async (req, res) => {
@@ -178,6 +382,13 @@ app.get('/metrics', async (req, res) => {
     console.error("Error serving /metrics:", ex);
     res.status(500).end(ex.message || ex.toString());
   }
+});
+
+// ✨ 테스트용 임시 API 엔드포인트 ✨
+app.get('/api/test/increment-signup', (req, res) => {
+    usersRegisteredCounter.inc();
+    console.log('✅ [Test] users_registered_total 메트릭이 1 증가했습니다.');
+    res.status(200).send('OK: User registration counter incremented by 1.');
 });
 
 // 서버 실행

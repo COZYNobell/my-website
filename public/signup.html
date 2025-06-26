@@ -1,135 +1,182 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <title>회원가입</title>
-    <style>
-        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 80vh; background-color: #f4f4f4; }
-        .container { background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); width: 300px; }
-        h1 { text-align: center; margin-bottom: 20px; }
-        label { display: block; margin-bottom: 5px; }
-        input[type="email"], input[type="password"] {
-            width: calc(100% - 20px); padding: 10px;
-            margin-bottom: 15px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-        button {
-            width: 100%; padding: 10px;
-            background-color: #28a745;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        button:hover { background-color: #218838; }
-        .message-box {
-            margin-bottom: 15px; 
-            padding: 10px;
-            border-radius: 4px;
-            text-align: center;
-            font-weight: bold;
-        }
-        .message-box.error {
-            color: #721c24; background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-        }
-        .message-box.success {
-            color: #155724; background-color: #d4edda;
-            border: 1px solid #c3e6cb;
-            }
-        .nav-links {
-            margin-top: 15px; text-align: center;
-        }
-        .nav-links a {
-            color: #007bff; text-decoration: none;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <title>회원가입</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 80vh;
+      background-color: #f4f4f4;
+    }
+    .container {
+      background-color: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+      width: 300px;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+    }
+    input[type="email"],
+    input[type="password"] {
+      width: calc(100% - 20px);
+      padding: 10px;
+      margin-bottom: 15px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #218838;
+    }
+    .message-box {
+      margin-bottom: 15px;
+      padding: 10px;
+      border-radius: 4px;
+      text-align: center;
+      font-weight: bold;
+    }
+    .message-box.error {
+      color: #721c24;
+      background-color: #f8d7da;
+      border: 1px solid #f5c6cb;
+    }
+    .message-box.success {
+      color: #155724;
+      background-color: #d4edda;
+      border: 1px solid #c3e6cb;
+    }
+    .nav-links {
+      margin-top: 15px;
+      text-align: center;
+    }
+    .nav-links a {
+      color: #007bff;
+      text-decoration: none;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>회원가입</h1>
-        <div id="message-box" class="message-box" style="display: none;"></div>
-
-        <form id="signupForm">
-            <div>
-                <label for="email">이메일:</label>
-                <input type="email" id="email" name="email" required>
-            </div>
-            <div>
-                <label for="password">비밀번호:</label>
-                <input type="password" id="password" name="password" required minlength="6"> </div>
-            <button type="submit" id="signupButton">가입하기</button> </form>
-        <div class="nav-links">
-            <p>이미 계정이 있으신가요? <a href="/login.html">로그인</a></p>
-            <p><a href="/">홈으로</a></p>
-        </div>
+  <div class="container">
+    <h1>회원가입</h1>
+    <div id="message-box" class="message-box" style="display: none;"></div>
+    <form id="signupForm">
+      <div>
+        <label for="email">이메일:</label>
+        <input type="email" id="email" name="email" required />
+      </div>
+      <div>
+        <label for="password">비밀번호:</label>
+        <input
+          type="password"
+          id="password"
+          name="password"
+          required
+          minlength="6"
+        />
+      </div>
+      <button type="submit" id="signupButton">가입하기</button>
+    </form>
+    <div class="nav-links">
+      <p>이미 계정이 있으신가요? <a href="/login.html">로그인</a></p>
+      <p><a href="/">홈으로</a></p>
     </div>
+  </div>
 
-    <script>
-        const API_GATEWAY_BASE_URL = "https://7bsjoaagma.execute-api.ap-northeast-2.amazonaws.com/test2/api"; // ⭐⭐ API Gateway 기본 URL 추가 ⭐⭐
-        const form = document.getElementById('signupForm');
-        const messageBox = document.getElementById('message-box');
-        const signupButton = document.getElementById('signupButton'); // ⭐⭐ 버튼 요소 가져오기 ⭐⭐
+  <script>
+    const GATEWAY_URL =
+      "https://7bsjoaagma.execute-api.ap-northeast-2.amazonaws.com/test2/api"; // Lambda
+    const LOCAL_METRICS_SERVER_URL = "http://localhost:3000/signup"; // Node.js (for Prometheus)
 
-        form.addEventListener('submit', async function(e) {
-            e.preventDefault(); 
+    const form = document.getElementById("signupForm");
+    const messageBox = document.getElementById("message-box");
+    const signupButton = document.getElementById("signupButton");
 
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
-            
-            messageBox.style.display = 'none';
-            messageBox.textContent = '';
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
 
-            // ⭐⭐ 프론트엔드 비밀번호 유효성 검사 ⭐⭐
-            if (password.length < 6) {
-                messageBox.textContent = '비밀번호는 최소 6자 이상이어야 합니다.';
-                messageBox.className = 'message-box error';
-                messageBox.style.display = 'block';
-                return; // 함수 종료
-            }
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
 
-            signupButton.disabled = true; // ⭐⭐ 버튼 비활성화 ⭐⭐
-            signupButton.textContent = '가입 중...'; // ⭐⭐ 버튼 텍스트 변경 ⭐⭐
+      messageBox.style.display = "none";
+      messageBox.textContent = "";
 
-            try {
-                const response = await fetch(API_GATEWAY_BASE_URL, { // ⭐⭐ API_GATEWAY_BASE_URL 사용 ⭐⭐
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: "register", 
-                        email: email,
-                        password: password
-                    })
-                });
+      if (password.length < 6) {
+        messageBox.textContent = "비밀번호는 최소 6자 이상이어야 합니다.";
+        messageBox.className = "message-box error";
+        messageBox.style.display = "block";
+        return;
+      }
 
-                const result = await response.json();
-                if (response.ok) {
-                    // ⭐⭐ 회원가입 성공 시 토큰 저장 로직은 로그인 페이지로 넘겨주는 것이 더 자연스러움 ⭐⭐
-                    // localStorage.setItem('token', result.token); 
-                    // localStorage.setItem('userEmail', email);
+      signupButton.disabled = true;
+      signupButton.textContent = "가입 중...";
 
-                    messageBox.textContent = result.message || `${email} 으로 가입되었습니다. 이메일 인증을 완료해주세요.`;
-                    messageBox.className = 'message-box success';
-                    form.reset(); 
+      const payload = { email, password };
 
-                    setTimeout(() => {
-                        window.location.href = `/login.html?signup=success&email=${encodeURIComponent(email)}`; // ⭐⭐ 성공 시 이메일 파라미터로 전달 ⭐⭐
-                    }, 2000); 
-                } else {
-                    messageBox.textContent = result.error || '가입 처리 중 오류가 발생했습니다.';
-                    messageBox.className = 'message-box error';
-                }
-            } catch (err) {
-                console.error('Fetch Error:', err);
-                messageBox.textContent = '네트워크 오류 또는 서버에 연결할 수 없습니다.';
-                messageBox.className = 'message-box error';
-            } finally {
-                messageBox.style.display = 'block';
-                signupButton.disabled = false; // ⭐⭐ 버튼 다시 활성화 ⭐⭐
-                signupButton.textContent = '가입하기'; // ⭐⭐ 버튼 텍스트 원상 복구 ⭐⭐
-            }
+      try {
+        // 1️⃣ Lambda 호출
+        const response = await fetch(GATEWAY_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "register", ...payload }),
         });
-    </script>
+
+        const result = await response.json();
+
+        if (response.ok) {
+          // 2️⃣ 동시에 메트릭 전송 (비동기, 실패해도 무시)
+          fetch(LOCAL_METRICS_SERVER_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }).catch((err) =>
+            console.warn("로컬 메트릭 전송 실패:", err.message)
+          );
+
+          messageBox.textContent =
+            result.message || "회원가입 성공! 로그인 페이지로 이동합니다.";
+          messageBox.className = "message-box success";
+          form.reset();
+
+          setTimeout(() => {
+            window.location.href = `/login.html?signup=success&email=${encodeURIComponent(
+              email
+            )}`;
+          }, 1500);
+        } else {
+          messageBox.textContent =
+            result.error || "회원가입 처리 중 오류가 발생했습니다.";
+          messageBox.className = "message-box error";
+        }
+      } catch (err) {
+        console.error("회원가입 실패:", err);
+        messageBox.textContent =
+          "네트워크 오류 또는 서버에 연결할 수 없습니다.";
+        messageBox.className = "message-box error";
+      } finally {
+        messageBox.style.display = "block";
+        signupButton.disabled = false;
+        signupButton.textContent = "가입하기";
+      }
+    });
+  </script>
 </body>
 </html>

@@ -1,9 +1,3 @@
-// 📄 파일명: server.js
-// ✅ 버전: v5 (최종 복원 및 개선)
-// ✅ 설명: 이전에 생략되었던 모든 API 로직을 포함하고, metrics.js 모듈을 사용하도록 수정한 최종 완성본입니다.
-// 🕒 날짜: 2025-06-25
-
-// 1. 필요한 모듈 가져오기
 const express = require('express');
 const axios = require('axios');
 require('dotenv').config();
@@ -11,28 +5,65 @@ const session = require('express-session');
 const bcrypt = require('bcrypt');
 const mysql = require('mysql2/promise');
 const path = require('path');
-const { SNSClient, SubscribeCommand } = require("@aws-sdk/client-sns");
+const { SNSClient, SubscribeCommand } = require('@aws-sdk/client-sns');
 
-// ✨ 우리가 만든 metrics.js 모듈을 가져옵니다.
-const { register, httpRequestDurationMicroseconds, usersRegisteredCounter } = require('./metrics');
+const {
+  register,
+  httpRequestDurationMicroseconds,
+  httpRequestCounter,
+  usersRegisteredCounter
+} = require('./metrics');
 
-// 2. Express 앱 생성 및 포트 설정
 const app = express();
 const port = process.env.PORT || 3000;
-const IS_DEVELOPMENT = process.env.NODE_ENV !== 'production';
+const IS_DEV = process.env.NODE_ENV !== 'production';
 
-// --- AWS 클라이언트 및 DB 풀 초기화 ---
 const snsClient = new SNSClient({ region: process.env.AWS_REGION || "ap-northeast-2" });
 const dbPool = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10
 });
 
+async function initializeDatabase() {
+  let conn;
+  try {
+    conn = await dbPool.getConnection();
+    console.log('✅ DB 연결 성공');
+    const dbName = process.env.DB_NAME;
+    await conn.query(`CREATE DATABASE IF NOT EXISTS \\`${dbName}\\``);
+    await conn.query(`USE \\`${dbName}\\``);
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS favorites (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        location_name TEXT,
+        latitude DECIMAL(10, 8),
+        longitude DECIMAL(11, 8),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    console.log('✅ 테이블 준비 완료');
+  } catch (err) {
+    console.error('DB 초기화 실패:', err.message);
+    process.exit(1);
+  } finally {
+    if (conn) conn.release();
+  }
+}
+initializeDatabase();
 // --- DB 초기화 ---
 async function initializeDatabase() {
     let connection;
@@ -81,7 +112,6 @@ async function initializeDatabase() {
                 UNIQUE KEY unique_user_favorite_condition (user_id, favorite_id, condition_type)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         `);
-
         console.log("✅ 모든 테이블이 성공적으로 준비되었습니다.");
     } catch (error) {
         console.error("🔴 데이터베이스 초기화 중 오류:", error.message);
@@ -126,7 +156,6 @@ function ensureAuthenticated(req, res, next) {
     if (req.path.startsWith('/api/')) return res.status(401).json({ message: '로그인이 필요합니다.', redirectTo: '/login.html' });
     return res.redirect(`/login.html?message=${encodeURIComponent('로그인이 필요합니다.')}`);
 }
-
 // --- HTML 페이지 라우트 ---
 app.get('/', (req, res) => {
     if (req.session.user) {
@@ -217,7 +246,6 @@ app.post('/api/favorites', ensureAuthenticated, async (req, res) => {
         if (connection) connection.release();
     }
 });
-
 app.get('/api/favorites', ensureAuthenticated, async (req, res) => {
     let connection;
     try {
@@ -265,7 +293,7 @@ app.get('/api/weather', async (req, res) => {
     }
 });
 
-// 🔧 메트릭 수집
+// 📈 Prometheus 메트릭 수집
 app.get('/metrics', async (req, res) => {
     try {
         res.set('Content-Type', register.contentType);
@@ -281,8 +309,13 @@ app.get('/healthz', (req, res) => {
     res.status(200).send("OK");
 });
 
+// 🧪 테스트용 회원가입 카운터 수동 증가
+app.get('/api/test/increment-signup', (req, res) => {
+    usersRegisteredCounter.inc();
+    res.send('✅ users_registered_total 카운터가 수동으로 1 증가했습니다.');
+});
+
 // 🚀 서버 시작
 app.listen(port, () => {
     console.log(`✅ 서버 실행 중: http://localhost:${port}`);
 });
-

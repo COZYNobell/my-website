@@ -1,7 +1,7 @@
 // 📄 파일명: metrics.js
-// ✅ 버전: v2
-// ✅ 설명: Prometheus 커스텀 메트릭 (요청 수, 요청 시간, 회원가입 수 포함)
-// 🕒 날짜: 2025-06-25
+// ✅ 버전: v3
+// ✅ 설명: Prometheus 커스텀 메트릭 (요청 수, 요청 시간, 회원가입 수 포함 + 수동 증가 테스트 포함)
+// 🕒 날짜: 2025-06-26
 
 const client = require('prom-client');
 const register = new client.Registry();
@@ -46,4 +46,8 @@ module.exports = {
   httpRequestDurationMicroseconds,
   httpRequestCounter,
   usersRegisteredCounter,
+  // 수동 증가 함수 추가 (테스트용)
+  incrementSignupMetric: () => {
+    usersRegisteredCounter.inc();
+  }
 };
